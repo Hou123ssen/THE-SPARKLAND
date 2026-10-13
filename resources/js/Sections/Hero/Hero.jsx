@@ -3,7 +3,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Lenis from "lenis";
 import "lenis/dist/lenis.css";
-import Navbar from "../../components/Navbar.jsx";
+import Navbar from "../../Components/Navbar.jsx";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -42,7 +42,8 @@ const sequenceFramePaths = [
   "/images/hero-sequence/ezgif-frame-032.png",
   "/images/hero-sequence/ezgif-frame-033.png",
   "/images/hero-sequence/ezgif-frame-034.png",
-  "/images/hero-sequence/ezgif-frame-035.png",
+  // Frame 035 is absent from the supplied sequence; hold frame 034 for this slot.
+  "/images/hero-sequence/ezgif-frame-034.png",
   "/images/hero-sequence/ezgif-frame-036.png",
   "/images/hero-sequence/ezgif-frame-037.png",
   "/images/hero-sequence/ezgif-frame-038.png",
