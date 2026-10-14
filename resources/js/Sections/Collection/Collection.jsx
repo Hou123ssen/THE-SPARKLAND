@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import DeviceBrowser from "./DeviceBrowser.jsx";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -11,17 +12,19 @@ const framePaths = Array.from(
     : `/images/collection-sequence/frame-${String(index + 1).padStart(3, "0")}.png`,
 );
 
-function Collection() {
+function Collection({ catalog = [] }) {
   const sectionRef = useRef(null);
   const stageRef = useRef(null);
   const canvasRef = useRef(null);
   const titleRef = useRef(null);
+  const browserRef = useRef(null);
 
   useLayoutEffect(() => {
     const section = sectionRef.current;
     const stage = stageRef.current;
     const canvas = canvasRef.current;
     const title = titleRef.current;
+    const browser = browserRef.current;
     const context = canvas.getContext("2d");
     const images = Array(framePaths.length).fill(null);
     const loadTimers = [];
@@ -128,6 +131,12 @@ function Collection() {
         { y: 100, opacity: 0, scale: 0.96 },
         { y: 0, opacity: 1, scale: 1, duration: 100 },
         0,
+      )
+      .fromTo(
+        browser,
+        { autoAlpha: 0 },
+        { autoAlpha: 1, duration: 8 },
+        92,
       );
 
     ScrollTrigger.refresh();
@@ -165,6 +174,10 @@ function Collection() {
           aria-label="The Sparkland collection unfolding sequence"
           role="img"
         />
+
+        <div className="pointer-events-none absolute left-1/2 top-1/2 z-[11] aspect-video w-[min(100%,calc((100svh-76px)*1.7778))] -translate-x-1/2 -translate-y-1/2">
+          <DeviceBrowser catalog={catalog} browserRef={browserRef} />
+        </div>
       </div>
     </section>
   );
