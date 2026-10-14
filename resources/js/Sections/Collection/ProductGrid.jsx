@@ -25,7 +25,7 @@ function ProductGrid({ collectionId, products, onProductSelect }) {
 
   return (
     <div
-      className={`grid h-full w-full grid-cols-3 grid-rows-2 gap-x-[3%] gap-y-[1%] px-[5%] py-[4%] touch-pan-y transition-[opacity,transform] duration-300 ease-out ${entering ? "translate-x-2 opacity-0" : "translate-x-0 opacity-100"}`}
+      className={`grid h-full w-full grid-cols-4 grid-rows-4 gap-x-[1%] gap-y-0 px-[4%] py-[3%] touch-pan-y transition-[opacity,transform] duration-300 ease-out ${entering ? "translate-x-2 opacity-0" : "translate-x-0 opacity-100"}`}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
@@ -42,12 +42,9 @@ function ProductGrid({ collectionId, products, onProductSelect }) {
             <img
               src={getImage(product)}
               alt=""
-              className="max-h-full w-full object-contain mix-blend-multiply transition-opacity duration-300 group-hover:opacity-75"
+              className="max-h-[94%] w-full object-contain mix-blend-multiply transition-opacity duration-300 group-hover:opacity-75"
               draggable="false"
             />
-          </span>
-          <span className="mt-[1%] max-w-full truncate font-sans text-[clamp(0.38rem,0.75vw,0.64rem)] font-semibold uppercase tracking-[0.12em]">
-            {product.name}
           </span>
         </button>
       ))}

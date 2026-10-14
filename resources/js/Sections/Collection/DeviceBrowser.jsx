@@ -10,7 +10,7 @@ function DeviceBrowser({ catalog, browserRef, screenCoverRef, onProductSelect })
   const swipeStartX = useRef(null);
   const collections = catalog.filter((collection) => collection.products?.length).map((collection) => ({
     ...collection,
-    products: collection.products.slice(0, 6),
+    products: collection.products.slice(0, 16),
   }));
   const collection = collections[collectionIndex] || collections[0];
 
@@ -88,8 +88,8 @@ function DeviceBrowser({ catalog, browserRef, screenCoverRef, onProductSelect })
             </div>
           )}
 
-          <div className="pointer-events-none absolute bottom-[2.5%] left-1/2 -translate-x-1/2 whitespace-nowrap font-sans text-[clamp(0.42rem,0.75vw,0.62rem)] font-semibold uppercase tracking-[0.16em] text-[#111111]/60">
-            {String(collectionIndex + 1).padStart(2, "0")} / {String(collections.length).padStart(2, "0")} &nbsp; {collection.name}
+          <div className="pointer-events-none absolute bottom-[1.25%] left-1/2 -translate-x-1/2 whitespace-nowrap font-sans text-[clamp(0.4rem,0.65vw,0.56rem)] font-semibold uppercase tracking-[0.16em] text-[#111111]/50">
+            {String(collectionIndex + 1).padStart(2, "0")} / {String(collections.length).padStart(2, "0")}
           </div>
         </div>
       </div>
