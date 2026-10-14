@@ -6,7 +6,9 @@ gsap.registerPlugin(ScrollTrigger);
 
 const framePaths = Array.from(
   { length: 80 },
-  (_, index) => `/images/collection-sequence/frame-${String(index + 1).padStart(3, "0")}.png`,
+  (_, index) => index === 79
+    ? "/images/collection-sequence/frame-080.png.png"
+    : `/images/collection-sequence/frame-${String(index + 1).padStart(3, "0")}.png`,
 );
 
 function Collection() {
