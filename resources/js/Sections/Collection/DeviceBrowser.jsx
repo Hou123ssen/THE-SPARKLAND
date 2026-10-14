@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import ProductGrid from "./ProductGrid.jsx";
 
 const screenGeometry = {
-  clipPath: "polygon(0.8% 4%, 50% 6%, 99.2% 4%, 99.2% 96%, 50% 94%, 0.8% 96%)",
+  clipPath: "polygon(1.2% 2.2%, 50% 4.8%, 98.8% 2.2%, 98.8% 97.8%, 50% 95.2%, 1.2% 97.8%)",
 };
 
 function DeviceBrowser({ catalog, browserRef, screenCoverRef, onProductSelect }) {
@@ -41,10 +41,15 @@ function DeviceBrowser({ catalog, browserRef, screenCoverRef, onProductSelect })
     <>
       <div
         ref={screenCoverRef}
-        className="pointer-events-none absolute left-[20.25%] top-[19.25%] z-[11] h-[61.5%] w-[62.5%] bg-white opacity-0"
+        className="pointer-events-none absolute left-[20.70%] top-[20.70%] z-[11] h-[59.31%] w-[61.17%] bg-white opacity-0"
         style={screenGeometry}
         aria-hidden="true"
-      />
+      >
+        <span
+          className="pointer-events-none absolute left-1/2 top-[5%] z-10 h-[90%] w-[0.45%] -translate-x-1/2 bg-[#111111]/90"
+          aria-hidden="true"
+        />
+      </div>
 
       <div
         ref={browserRef}
@@ -52,12 +57,16 @@ function DeviceBrowser({ catalog, browserRef, screenCoverRef, onProductSelect })
         aria-label="Collection product browser"
       >
         <div
-          className="absolute left-[20.25%] top-[19.25%] h-[61.5%] w-[62.5%] overflow-hidden rounded-[4%] bg-transparent"
+          className="absolute left-[20.70%] top-[20.70%] h-[59.31%] w-[61.17%] overflow-hidden bg-transparent"
           style={screenGeometry}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
           onPointerCancel={() => { swipeStartX.current = null; }}
         >
+          <span
+            className="pointer-events-none absolute left-1/2 top-[5%] z-20 h-[90%] w-[0.45%] -translate-x-1/2 bg-[#111111]/90"
+            aria-hidden="true"
+          />
           <div className="absolute inset-0 transition-opacity duration-300">
             <ProductGrid
               key={collection.id}

@@ -42,7 +42,7 @@ function ProductGrid({ collectionId, products, onProductSelect }) {
             <img
               src={getImage(product)}
               alt=""
-              className="max-h-[94%] w-full object-contain mix-blend-multiply transition-opacity duration-300 group-hover:opacity-75"
+              className="max-h-[94%] w-full origin-center scale-[1.55] object-contain mix-blend-multiply transition-opacity duration-300 group-hover:opacity-75"
               draggable="false"
             />
           </span>
