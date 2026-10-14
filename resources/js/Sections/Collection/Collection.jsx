@@ -17,6 +17,7 @@ function Collection({ catalog = [] }) {
   const stageRef = useRef(null);
   const canvasRef = useRef(null);
   const titleRef = useRef(null);
+  const screenCoverRef = useRef(null);
   const browserRef = useRef(null);
 
   useLayoutEffect(() => {
@@ -24,6 +25,7 @@ function Collection({ catalog = [] }) {
     const stage = stageRef.current;
     const canvas = canvasRef.current;
     const title = titleRef.current;
+    const screenCover = screenCoverRef.current;
     const browser = browserRef.current;
     const context = canvas.getContext("2d");
     const images = Array(framePaths.length).fill(null);
@@ -133,9 +135,26 @@ function Collection({ catalog = [] }) {
         0,
       )
       .fromTo(
+        screenCover,
+        { autoAlpha: 0 },
+        { autoAlpha: 1, duration: 5 },
+        68,
+      )
+      .fromTo(
         browser,
         { autoAlpha: 0 },
-        { autoAlpha: 1, duration: 8 },
+        {
+          autoAlpha: 1,
+          duration: 8,
+          onUpdate: () => {
+            browser.style.pointerEvents = Number(gsap.getProperty(browser, "opacity")) >= 0.85
+              ? "auto"
+              : "none";
+          },
+          onReverseComplete: () => {
+            browser.style.pointerEvents = "none";
+          },
+        },
         92,
       );
 
@@ -176,7 +195,11 @@ function Collection({ catalog = [] }) {
         />
 
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-[11] aspect-video w-[min(100%,calc((100svh-76px)*1.7778))] -translate-x-1/2 -translate-y-1/2">
-          <DeviceBrowser catalog={catalog} browserRef={browserRef} />
+          <DeviceBrowser
+            catalog={catalog}
+            browserRef={browserRef}
+            screenCoverRef={screenCoverRef}
+          />
         </div>
       </div>
     </section>
