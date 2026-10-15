@@ -4,12 +4,20 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['name', 'slug', 'description', 'display_order', 'is_active'])]
 class Collection extends Model
 {
-    public function products(): HasMany
+    public function products(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class)
+            ->withPivot(['display_order', 'is_featured'])
+            ->withTimestamps();
+    }
+
+    public function legacyProducts(): HasMany
     {
         return $this->hasMany(Product::class);
     }

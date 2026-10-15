@@ -21,21 +21,26 @@ class PublicCatalog
             ->with(['products' => function ($query): void {
                 $query
                     ->select([
-                        'id',
-                        'collection_id',
-                        'name',
-                        'slug',
-                        'description',
-                        'price',
-                        'color',
-                        'material',
-                        'lens',
-                        'frame',
-                        'dimensions',
+                        'products.id',
+                        'products.collection_id',
+                        'products.name',
+                        'products.slug',
+                        'products.description',
+                        'products.price',
+                        'products.color',
+                        'products.material',
+                        'products.lens',
+                        'products.frame',
+                        'products.dimensions',
                     ])
-                    ->where('is_active', true)
-                    ->orderBy('display_order')
-                    ->orderBy('id')
+                    ->where('products.is_active', true)
+                    ->where('products.status', 'active')
+                    ->where(function ($query): void {
+                        $query->whereNull('products.published_at')->orWhere('products.published_at', '<=', now());
+                    })
+                    ->orderBy('collection_product.display_order')
+                    ->orderBy('products.display_order')
+                    ->orderBy('products.id')
                     ->with(['images' => function ($query): void {
                         $query
                             ->select(['id', 'product_id', 'image_path', 'type', 'display_order'])

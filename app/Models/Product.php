@@ -5,7 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
     'collection_id',
@@ -20,9 +22,23 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'dimensions',
     'display_order',
     'is_active',
+    'product_type',
+    'status',
+    'published_at',
+    'is_prescription_eligible',
+    'seo_title',
+    'seo_description',
 ])]
 class Product extends Model
 {
+    use SoftDeletes;
+
+    public const TYPE_FRAME = 'frame';
+    public const TYPE_SUNGLASSES = 'sunglasses';
+    public const STATUS_DRAFT = 'draft';
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_ARCHIVED = 'archived';
+
     public function collection(): BelongsTo
     {
         return $this->belongsTo(Collection::class);
@@ -33,12 +49,31 @@ class Product extends Model
         return $this->hasMany(ProductImage::class);
     }
 
+    public function collections(): BelongsToMany
+    {
+        return $this->belongsToMany(Collection::class)
+            ->withPivot(['display_order', 'is_featured'])
+            ->withTimestamps();
+    }
+
+    public function variants(): HasMany
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
+
+    public function media(): HasMany
+    {
+        return $this->hasMany(ProductMedia::class);
+    }
+
     protected function casts(): array
     {
         return [
             'price' => 'decimal:2',
             'display_order' => 'integer',
             'is_active' => 'boolean',
+            'is_prescription_eligible' => 'boolean',
+            'published_at' => 'datetime',
         ];
     }
 }
