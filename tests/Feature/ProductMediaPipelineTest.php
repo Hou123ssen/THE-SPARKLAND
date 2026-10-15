@@ -9,7 +9,11 @@ use App\Models\Product;
 use App\Models\ProductMedia;
 use App\Models\ProductVariant;
 use App\Services\MediaDerivativeGenerator;
+use App\Services\ImageProcessor;
+use App\Services\NativeGdImageProcessor;
+use App\Services\PreparedImage;
 use App\Services\ProductMediaIngestor;
+use App\Services\ProductMediaKind;
 use App\Services\ProductMediaManifest;
 use App\Services\ProductMediaSelector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -78,6 +82,27 @@ class ProductMediaPipelineTest extends TestCase
         app(ProductMediaIngestor::class)->ingest($this->transparentUpload(), $this->product(), null, 'front');
     }
 
+    public function test_rejects_oversized_headers_before_attempting_a_full_decode(): void
+    {
+        $processor = new class implements ImageProcessor {
+            public bool $decoded = false;
+            public function capabilities(): array { return ['jpeg' => true, 'png' => true, 'webp' => true, 'avif' => false, 'exif' => false]; }
+            public function probe(string $sourcePath): array { return ['mime_type' => 'image/png', 'width' => 10_000, 'height' => 10_000]; }
+            public function validateDecodable(string $sourcePath, array $probe): void { $this->decoded = true; }
+            public function prepare(string $sourcePath): PreparedImage { throw new RuntimeException('Not reached.'); }
+            public function render(PreparedImage $source, string $targetPath, string $format, array $preset): array { throw new RuntimeException('Not reached.'); }
+        };
+        $this->app->instance(ImageProcessor::class, $processor);
+        config(['media.max_pixels' => 1_000]);
+
+        try {
+            app(ProductMediaIngestor::class)->ingest($this->transparentUpload(), $this->product(), null, 'front');
+            $this->fail('A large header must be rejected before decoding.');
+        } catch (InvalidArgumentException) {
+            $this->assertFalse($processor->decoded);
+        }
+    }
+
     public function test_enforces_configured_upload_size_limits_before_storing_a_master(): void
     {
         config(['media.max_upload_mb' => 0]);
@@ -123,13 +148,32 @@ class ProductMediaPipelineTest extends TestCase
         $this->assertSame($masterHash, hash('sha256', Storage::disk('media-original')->get($asset->path)));
     }
 
+    public function test_processing_prepares_the_source_once_for_the_complete_derivative_set(): void
+    {
+        Queue::fake();
+        $media = app(ProductMediaIngestor::class)->ingest($this->transparentUpload(), $this->product(), null, 'front');
+        $native = app(NativeGdImageProcessor::class);
+        $processor = new class($native) implements ImageProcessor {
+            public int $prepareCalls = 0;
+            public int $renderCalls = 0;
+            public function __construct(private NativeGdImageProcessor $native) {}
+            public function capabilities(): array { return $this->native->capabilities(); }
+            public function probe(string $sourcePath): array { return $this->native->probe($sourcePath); }
+            public function validateDecodable(string $sourcePath, array $probe): void { $this->native->validateDecodable($sourcePath, $probe); }
+            public function prepare(string $sourcePath): PreparedImage { $this->prepareCalls++; return $this->native->prepare($sourcePath); }
+            public function render(PreparedImage $source, string $targetPath, string $format, array $preset): array { $this->renderCalls++; return $this->native->render($source, $targetPath, $format, $preset); }
+        };
+
+        (new ProcessMediaAsset($media->media_asset_id))->handle(new MediaDerivativeGenerator($processor));
+
+        $this->assertSame(1, $processor->prepareCalls);
+        $this->assertGreaterThan(1, $processor->renderCalls);
+    }
+
     public function test_processing_failure_marks_the_asset_failed_and_keeps_the_master_record(): void
     {
-        $asset = MediaAsset::create([
-            'disk' => 'media-original', 'path' => 'missing/source.png', 'mime_type' => 'image/png',
-            'width' => 200, 'height' => 100, 'bytes' => 1, 'checksum_sha256' => str_repeat('a', 64),
-            'processing_status' => 'pending',
-        ]);
+        $media = $this->media($this->product(), null, 'front');
+        $asset = $media->mediaAsset;
 
         try {
             (new ProcessMediaAsset($asset->id))->handle(app(MediaDerivativeGenerator::class));
@@ -173,6 +217,8 @@ class ProductMediaPipelineTest extends TestCase
 
         $manifest = app(ProductMediaManifest::class)->forProduct($product);
         $this->assertNotEmpty($manifest[0]['responsive']['webp']);
+        $this->assertNotEmpty($manifest[0]['responsive']['fallback']);
+        $this->assertSame('image/png', $manifest[0]['responsive']['fallback'][0]['mime_type']);
         $this->assertNotNull($manifest[0]['device_browser']);
         $this->assertArrayNotHasKey('path', $manifest[0]['original']);
         $this->assertArrayNotHasKey('disk', $manifest[0]['original']);
@@ -181,6 +227,72 @@ class ProductMediaPipelineTest extends TestCase
             $this->assertNotEmpty($manifest[0]['responsive']['avif']);
         } else {
             $this->assertSame([], $manifest[0]['responsive']['avif']);
+        }
+    }
+
+    public function test_derivative_policy_only_generates_device_browser_for_front_images_and_skips_spin_assets(): void
+    {
+        Queue::fake();
+        $product = $this->product();
+        $front = app(ProductMediaIngestor::class)->ingest($this->transparentUpload(), $product, null, 'front');
+        $angle = app(ProductMediaIngestor::class)->ingest($this->transparentUpload(), $product, null, 'angle');
+        $side = app(ProductMediaIngestor::class)->ingest($this->transparentUpload(), $product, null, 'side');
+        $lifestyle = app(ProductMediaIngestor::class)->ingest($this->transparentUpload(), $product, null, 'lifestyle');
+        $spin = app(ProductMediaIngestor::class)->ingest($this->transparentUpload(), $product, null, 'spin', kind: ProductMediaKind::SPIN);
+
+        foreach ([$front, $angle, $side, $lifestyle, $spin] as $media) {
+            (new ProcessMediaAsset($media->media_asset_id))->handle(app(MediaDerivativeGenerator::class));
+        }
+
+        $this->assertDatabaseHas('media_derivatives', ['media_asset_id' => $front->media_asset_id, 'preset' => 'device_browser']);
+        $this->assertDatabaseMissing('media_derivatives', ['media_asset_id' => $angle->media_asset_id, 'preset' => 'device_browser']);
+        $this->assertDatabaseMissing('media_derivatives', ['media_asset_id' => $side->media_asset_id, 'preset' => 'device_browser']);
+        $this->assertDatabaseMissing('media_derivatives', ['media_asset_id' => $lifestyle->media_asset_id, 'preset' => 'device_browser']);
+        $this->assertDatabaseMissing('media_derivatives', ['media_asset_id' => $spin->media_asset_id, 'preset' => 'device_browser']);
+        $this->assertDatabaseMissing('media_derivatives', ['media_asset_id' => $spin->media_asset_id]);
+    }
+
+    public function test_derivative_write_failure_marks_the_asset_failed_without_creating_a_broken_record(): void
+    {
+        Queue::fake();
+        $media = app(ProductMediaIngestor::class)->ingest($this->transparentUpload(), $this->product(), null, 'front');
+        $invalidRoot = tempnam(sys_get_temp_dir(), 'media-derivative-root-');
+        config([
+            'media.derivative_disk' => 'failing-media-derivatives',
+            'filesystems.disks.failing-media-derivatives' => ['driver' => 'local', 'root' => $invalidRoot, 'throw' => false],
+        ]);
+        Storage::forgetDisk('failing-media-derivatives');
+
+        try {
+            (new ProcessMediaAsset($media->media_asset_id))->handle(app(MediaDerivativeGenerator::class));
+            $this->fail('A non-directory derivative root must fail processing.');
+        } catch (\Throwable) {
+            $asset = $media->mediaAsset->fresh();
+            $this->assertSame('failed', $asset->processing_status);
+            $this->assertDatabaseMissing('media_derivatives', ['media_asset_id' => $asset->id]);
+        } finally {
+            @unlink($invalidRoot);
+        }
+    }
+
+    public function test_rejects_unsupported_product_media_kinds(): void
+    {
+        Queue::fake();
+        $this->expectException(InvalidArgumentException::class);
+        app(ProductMediaIngestor::class)->ingest($this->transparentUpload(), $this->product(), null, 'front', kind: 'video');
+    }
+
+    public function test_complete_exif_orientation_rotates_and_transposes_jpegs(): void
+    {
+        if (! function_exists('exif_read_data')) {
+            $this->markTestSkipped('The EXIF extension is required for this orientation test.');
+        }
+
+        foreach ([5, 6] as $orientation) {
+            $prepared = app(NativeGdImageProcessor::class)->prepare($this->orientedJpeg($orientation));
+            $this->assertSame(10, $prepared->width);
+            $this->assertSame(30, $prepared->height);
+            $prepared->release();
         }
     }
 
@@ -218,6 +330,22 @@ class ProductMediaPipelineTest extends TestCase
         imagedestroy($image);
 
         return new UploadedFile($path, 'sparkland-packshot.png', 'image/png', null, true);
+    }
+
+    private function orientedJpeg(int $orientation): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'oriented-product-');
+        $image = imagecreatetruecolor(30, 10);
+        imagefilledrectangle($image, 0, 0, 29, 9, imagecolorallocate($image, 20, 20, 20));
+        imagejpeg($image, $path, 90);
+        imagedestroy($image);
+
+        $tiff = "II*\x00\x08\x00\x00\x00\x01\x00\x12\x01\x03\x00\x01\x00\x00\x00".pack('v', $orientation)."\x00\x00\x00\x00\x00\x00";
+        $exif = "Exif\x00\x00".$tiff;
+        $jpeg = file_get_contents($path);
+        file_put_contents($path, substr($jpeg, 0, 2)."\xFF\xE1".pack('n', strlen($exif) + 2).$exif.substr($jpeg, 2));
+
+        return $path;
     }
 
     /** @return array{int, int, int, int} */

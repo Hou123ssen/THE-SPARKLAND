@@ -9,6 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('media_assets', function (Blueprint $table): void {
+            $table->boolean('has_alpha')->nullable()->after('height');
             $table->timestamp('processed_at')->nullable()->index();
             $table->text('processing_error')->nullable();
         });
@@ -18,7 +19,7 @@ return new class extends Migration
     {
         Schema::table('media_assets', function (Blueprint $table): void {
             $table->dropIndex(['processed_at']);
-            $table->dropColumn(['processed_at', 'processing_error']);
+            $table->dropColumn(['has_alpha', 'processed_at', 'processing_error']);
         });
     }
 };

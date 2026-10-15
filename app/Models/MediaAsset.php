@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['disk', 'path', 'mime_type', 'width', 'height', 'bytes', 'checksum_sha256', 'original_name', 'processing_status', 'processed_at', 'processing_error'])]
+#[Fillable(['disk', 'path', 'mime_type', 'width', 'height', 'has_alpha', 'bytes', 'checksum_sha256', 'original_name', 'processing_status', 'processed_at', 'processing_error'])]
 class MediaAsset extends Model
 {
     public function productMedia(): HasMany { return $this->hasMany(ProductMedia::class); }
@@ -14,6 +14,6 @@ class MediaAsset extends Model
 
     protected function casts(): array
     {
-        return ['width' => 'integer', 'height' => 'integer', 'bytes' => 'integer', 'processed_at' => 'datetime'];
+        return ['width' => 'integer', 'height' => 'integer', 'has_alpha' => 'boolean', 'bytes' => 'integer', 'processed_at' => 'datetime'];
     }
 }

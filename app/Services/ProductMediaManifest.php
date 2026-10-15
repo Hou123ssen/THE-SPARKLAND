@@ -38,6 +38,7 @@ class ProductMediaManifest
                 'height' => $media->mediaAsset->height,
             ],
             'responsive' => [
+                'fallback' => $this->fallbackDerivatives($derivatives),
                 'webp' => $this->derivativesFor($derivatives, 'webp', 'responsive_'),
                 'avif' => $this->derivativesFor($derivatives, 'avif', 'responsive_'),
             ],
@@ -63,6 +64,18 @@ class ProductMediaManifest
             ?? $derivatives->first(fn (MediaDerivative $item): bool => $item->preset === 'device_browser');
 
         return $derivative === null ? null : $this->derivativeData($derivative);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function fallbackDerivatives($derivatives): array
+    {
+        return $derivatives
+            ->filter(fn (MediaDerivative $derivative): bool => str_starts_with($derivative->preset, 'responsive_') && in_array($derivative->format, ['jpeg', 'png'], true))
+            ->sortBy('width')
+            ->groupBy('width')
+            ->map(fn ($items): array => $this->derivativeData($items->first()))
+            ->values()
+            ->all();
     }
 
     /** @return array<string, mixed> */

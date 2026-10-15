@@ -17,11 +17,13 @@ class NativeGdImageProcessor implements ImageProcessor
         ];
     }
 
-    public function inspect(string $sourcePath): array
+    public function probe(string $sourcePath): array
     {
+        // This header probe precedes every GD decode, so oversized uploads can
+        // be rejected without allocating their full image buffer.
         $info = @getimagesize($sourcePath);
         if ($info === false) {
-            throw new RuntimeException('The uploaded file is not a decodable raster image.');
+            throw new RuntimeException('The uploaded file is not a supported raster image.');
         }
 
         $mime = $info['mime'] ?? null;
@@ -33,57 +35,58 @@ class NativeGdImageProcessor implements ImageProcessor
             throw new RuntimeException('AVIF uploads are not supported by this runtime.');
         }
 
-        // Force a server-side decode before accepting a file as a product image.
-        $decoded = $this->load($sourcePath, $mime);
-        imagedestroy($decoded);
-
-        return [
-            'mime_type' => $mime,
-            'width' => $info[0],
-            'height' => $info[1],
-            'has_alpha' => $this->hasAlpha($sourcePath, $mime),
-        ];
+        return ['mime_type' => $mime, 'width' => $info[0], 'height' => $info[1]];
     }
 
-    public function render(string $sourcePath, string $targetPath, string $format, array $preset): array
+    public function validateDecodable(string $sourcePath, array $probe): void
     {
-        $sourceInfo = $this->inspect($sourcePath);
-        $source = $this->load($sourcePath, $sourceInfo['mime_type']);
-        $source = $this->orient($source, $sourcePath, $sourceInfo['mime_type']);
+        $decoded = $this->load($sourcePath, $probe['mime_type']);
+        imagedestroy($decoded);
+    }
 
+    public function prepare(string $sourcePath): PreparedImage
+    {
+        $probe = $this->probe($sourcePath);
+        $source = $this->orient($this->load($sourcePath, $probe['mime_type']), $sourcePath, $probe['mime_type']);
         $sourceWidth = imagesx($source);
         $sourceHeight = imagesy($source);
-        [$left, $top, $contentWidth, $contentHeight] = $sourceInfo['has_alpha']
-            ? $this->contentBounds($source, $sourceWidth, $sourceHeight)
-            : [0, 0, $sourceWidth, $sourceHeight];
+        $hasAlpha = $this->hasAlpha($source, $probe['mime_type']);
+
+        return new PreparedImage(
+            $source,
+            $probe['mime_type'],
+            $sourceWidth,
+            $sourceHeight,
+            $hasAlpha,
+            $hasAlpha ? $this->contentBounds($source, $sourceWidth, $sourceHeight) : [0, 0, $sourceWidth, $sourceHeight],
+        );
+    }
+
+    public function render(PreparedImage $source, string $targetPath, string $format, array $preset): array
+    {
+        [$left, $top, $contentWidth, $contentHeight] = $source->contentBounds;
 
         [$canvasWidth, $canvasHeight, $drawWidth, $drawHeight] = $this->dimensions(
             $contentWidth,
             $contentHeight,
-            $sourceWidth,
-            $sourceHeight,
+            $source->width,
             $preset,
-            $sourceInfo['has_alpha'],
+            $source->hasAlpha,
         );
 
         $canvas = $this->transparentCanvas($canvasWidth, $canvasHeight);
         $destinationX = (int) floor(($canvasWidth - $drawWidth) / 2);
         $destinationY = (int) floor(($canvasHeight - $drawHeight) / 2);
         imagealphablending($canvas, true);
-        imagecopyresampled($canvas, $source, $destinationX, $destinationY, $left, $top, $drawWidth, $drawHeight, $contentWidth, $contentHeight);
+        imagecopyresampled($canvas, $source->image, $destinationX, $destinationY, $left, $top, $drawWidth, $drawHeight, $contentWidth, $contentHeight);
         imagesavealpha($canvas, true);
 
-        $mime = $this->encode($canvas, $targetPath, $format);
-        imagedestroy($source);
-        imagedestroy($canvas);
-
-        return [
-            'mime_type' => $mime,
-            'width' => $canvasWidth,
-            'height' => $canvasHeight,
-            'bytes' => filesize($targetPath),
-            'checksum_sha256' => hash_file('sha256', $targetPath),
-        ];
+        try {
+            $mime = $this->encode($canvas, $targetPath, $format);
+            return ['mime_type' => $mime, 'width' => $canvasWidth, 'height' => $canvasHeight, 'bytes' => filesize($targetPath), 'checksum_sha256' => hash_file('sha256', $targetPath)];
+        } finally {
+            imagedestroy($canvas);
+        }
     }
 
     private function load(string $path, string $mime): \GdImage
@@ -119,9 +122,13 @@ class NativeGdImageProcessor implements ImageProcessor
 
         $orientation = @exif_read_data($path)['Orientation'] ?? 1;
         $oriented = match ($orientation) {
-            3 => imagerotate($image, 180, 0),
-            6 => imagerotate($image, -90, 0),
-            8 => imagerotate($image, 90, 0),
+            2 => $this->flip($image, IMG_FLIP_HORIZONTAL),
+            3 => $this->rotate($image, 180),
+            4 => $this->flip($image, IMG_FLIP_VERTICAL),
+            5 => $this->flip($this->rotate($image, -90), IMG_FLIP_HORIZONTAL),
+            6 => $this->rotate($image, -90),
+            7 => $this->flip($this->rotate($image, -90), IMG_FLIP_VERTICAL),
+            8 => $this->rotate($image, 90),
             default => $image,
         };
 
@@ -130,6 +137,28 @@ class NativeGdImageProcessor implements ImageProcessor
         }
 
         return $oriented;
+    }
+
+    private function rotate(\GdImage $image, int $degrees): \GdImage
+    {
+        $background = imagecolorallocatealpha($image, 0, 0, 0, 127);
+        $rotated = imagerotate($image, $degrees, $background);
+        if (! $rotated instanceof \GdImage) {
+            throw new RuntimeException('Unable to apply EXIF orientation.');
+        }
+        imagealphablending($rotated, false);
+        imagesavealpha($rotated, true);
+
+        return $rotated;
+    }
+
+    private function flip(\GdImage $image, int $mode): \GdImage
+    {
+        if (! imageflip($image, $mode)) {
+            throw new RuntimeException('Unable to apply EXIF orientation.');
+        }
+
+        return $image;
     }
 
     /** @return array{int, int, int, int} */
@@ -156,7 +185,7 @@ class NativeGdImageProcessor implements ImageProcessor
     }
 
     /** @return array{int, int, int, int} */
-    private function dimensions(int $contentWidth, int $contentHeight, int $sourceWidth, int $sourceHeight, array $preset, bool $hasAlpha): array
+    private function dimensions(int $contentWidth, int $contentHeight, int $sourceWidth, array $preset, bool $hasAlpha): array
     {
         // Only transparent packshots are normalized with breathing room. Opaque
         // photography keeps its supplied crop unless a future explicit crop exists.
@@ -212,24 +241,21 @@ class NativeGdImageProcessor implements ImageProcessor
         };
     }
 
-    private function hasAlpha(string $sourcePath, string $mime): bool
+    private function hasAlpha(\GdImage $image, string $mime): bool
     {
-        if (! in_array($mime, ['image/png', 'image/webp', 'image/avif'], true)) {
+        if ($mime === 'image/jpeg') {
             return false;
         }
 
-        $image = $this->load($sourcePath, $mime);
         $width = imagesx($image);
         $height = imagesy($image);
         for ($y = 0; $y < $height; $y++) {
             for ($x = 0; $x < $width; $x++) {
                 if (((imagecolorat($image, $x, $y) >> 24) & 0x7f) > 0) {
-                    imagedestroy($image);
                     return true;
                 }
             }
         }
-        imagedestroy($image);
 
         return false;
     }

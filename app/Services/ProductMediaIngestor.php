@@ -23,6 +23,7 @@ class ProductMediaIngestor
     public function ingest(UploadedFile $upload, Product $product, ?ProductVariant $variant, string $role, int $displayOrder = 0, bool $isPrimary = false, string $kind = 'image'): ProductMedia
     {
         ProductMediaRole::assertSupported($role);
+        ProductMediaKind::assertSupported($kind);
         $this->assertVariantBelongsToProduct($variant, $product);
         $metadata = $this->validate($upload);
         $disk = config('media.original_disk');
@@ -79,7 +80,7 @@ class ProductMediaIngestor
         }
     }
 
-    /** @return array{mime_type: string, width: int, height: int, has_alpha: bool} */
+    /** @return array{mime_type: string, width: int, height: int} */
     private function validate(UploadedFile $upload): array
     {
         if (! $upload->isValid() || $upload->getRealPath() === false) {
@@ -91,10 +92,13 @@ class ProductMediaIngestor
             throw new InvalidArgumentException('The product image exceeds the configured upload size limit.');
         }
 
-        $metadata = $this->processor->inspect($upload->getRealPath());
+        // getimagesize() reads the raster header only. Reject decompression bombs
+        // before a decoder has a chance to allocate their full pixel buffer.
+        $metadata = $this->processor->probe($upload->getRealPath());
         if (($metadata['width'] * $metadata['height']) > config('media.max_pixels')) {
             throw new InvalidArgumentException('The product image exceeds the configured pixel limit.');
         }
+        $this->processor->validateDecodable($upload->getRealPath(), $metadata);
 
         return $metadata;
     }
