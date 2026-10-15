@@ -96,11 +96,14 @@ class LegacyCatalogBackfill
     private function minorUnits(string $amount): int
     {
         $normalized = trim($amount);
-        $negative = str_starts_with($normalized, '-');
-        $normalized = ltrim($normalized, '+-');
+        if (str_starts_with($normalized, '-')) {
+            throw new \InvalidArgumentException('Legacy catalog prices must not be negative.');
+        }
+
+        $normalized = ltrim($normalized, '+');
         [$whole, $fraction] = array_pad(explode('.', $normalized, 2), 2, '0');
         $minor = ((int) $whole * 100) + (int) str_pad(substr($fraction, 0, 2), 2, '0');
 
-        return $negative ? -$minor : $minor;
+        return $minor;
     }
 }

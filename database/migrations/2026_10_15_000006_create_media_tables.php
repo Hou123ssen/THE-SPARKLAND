@@ -28,7 +28,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
             $table->foreignId('product_variant_id')->nullable()->constrained('product_variants')->cascadeOnDelete();
-            $table->foreignId('media_asset_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('media_asset_id')->constrained()->restrictOnDelete();
             $table->string('kind');
             $table->string('role');
             $table->string('alt_text')->nullable();

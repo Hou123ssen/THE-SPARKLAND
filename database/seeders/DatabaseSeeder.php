@@ -16,6 +16,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        if (! app()->environment(['local', 'development', 'testing'])) {
+            return;
+        }
+
         $this->call(DemoCatalogSeeder::class);
         app(LegacyCatalogBackfill::class)->run();
     }

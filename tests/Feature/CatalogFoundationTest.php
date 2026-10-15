@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Collection;
 use App\Models\InventoryLevel;
 use App\Models\InventoryLocation;
+use App\Models\InventoryMovement;
 use App\Models\MediaAsset;
 use App\Models\Price;
 use App\Models\Product;
@@ -14,6 +15,7 @@ use App\Models\ProductVariant;
 use App\Models\Sku;
 use App\Services\LegacyCatalogBackfill;
 use App\Services\PublicCatalog;
+use Database\Seeders\DatabaseSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -89,6 +91,31 @@ class CatalogFoundationTest extends TestCase
         InventoryLevel::create(['sku_id' => $sku->id, 'inventory_location_id' => $location->id, 'on_hand' => 2]);
     }
 
+    public function test_inventory_levels_prevent_deleting_an_operational_sku(): void
+    {
+        [$sku, $location] = $this->stockedSku();
+        InventoryLevel::create(['sku_id' => $sku->id, 'inventory_location_id' => $location->id, 'on_hand' => 4]);
+
+        $this->expectException(QueryException::class);
+        $sku->delete();
+    }
+
+    public function test_inventory_movement_history_prevents_deleting_a_location(): void
+    {
+        [$sku, $location] = $this->stockedSku();
+        $level = InventoryLevel::create(['sku_id' => $sku->id, 'inventory_location_id' => $location->id, 'on_hand' => 4]);
+        InventoryMovement::create([
+            'sku_id' => $sku->id,
+            'inventory_location_id' => $location->id,
+            'type' => 'adjustment',
+            'quantity_delta' => 4,
+        ]);
+        $level->delete();
+
+        $this->expectException(QueryException::class);
+        $location->delete();
+    }
+
     public function test_product_and_variant_media_resolve_to_a_normalized_asset(): void
     {
         [, $product] = $this->legacyProduct();
@@ -129,6 +156,33 @@ class CatalogFoundationTest extends TestCase
         $this->assertDatabaseMissing('product_variants', ['id' => $variant->id]);
         $this->assertDatabaseMissing('product_media', ['product_id' => $product->id]);
         $this->assertDatabaseHas('media_assets', ['id' => $asset->id]);
+    }
+
+    public function test_a_referenced_media_asset_cannot_be_deleted(): void
+    {
+        [, $product] = $this->legacyProduct();
+        $asset = MediaAsset::create(['disk' => 'public', 'path' => '/images/axis.png']);
+        ProductMedia::create(['product_id' => $product->id, 'media_asset_id' => $asset->id, 'kind' => 'image', 'role' => 'front']);
+
+        $this->expectException(QueryException::class);
+        $asset->delete();
+    }
+
+    public function test_database_seeder_does_not_seed_demo_catalog_in_production(): void
+    {
+        $this->app->detectEnvironment(fn (): string => 'production');
+
+        app(DatabaseSeeder::class)->run();
+
+        $this->assertDatabaseCount('products', 0);
+    }
+
+    public function test_negative_legacy_prices_are_rejected_before_unsigned_price_insertion(): void
+    {
+        [, $product] = $this->legacyProduct(['price' => '-1.00']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        app(LegacyCatalogBackfill::class)->run();
     }
 
     public function test_public_catalog_excludes_inactive_and_unpublished_products_and_uses_membership_order(): void
@@ -176,5 +230,16 @@ class CatalogFoundationTest extends TestCase
         $collection = Collection::create(['name' => 'Core Forms', 'slug' => 'core-forms']);
         $product = Product::create(['collection_id' => $collection->id, 'name' => 'Axis 01', 'slug' => 'axis-01', ...$attributes]);
         return [$collection, $product];
+    }
+
+    /** @return array{Sku, InventoryLocation} */
+    private function stockedSku(): array
+    {
+        [, $product] = $this->legacyProduct();
+        $variant = ProductVariant::create(['product_id' => $product->id, 'slug' => 'axis-black', 'name' => 'Ink Black']);
+        $sku = Sku::create(['product_variant_id' => $variant->id, 'sku' => 'SPK-AXIS-BLK']);
+        $location = InventoryLocation::create(['code' => 'WH-01', 'name' => 'Primary warehouse']);
+
+        return [$sku, $location];
     }
 }

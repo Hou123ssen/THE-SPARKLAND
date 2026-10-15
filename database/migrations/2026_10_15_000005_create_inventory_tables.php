@@ -19,8 +19,8 @@ return new class extends Migration
 
         Schema::create('inventory_levels', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('sku_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('inventory_location_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('sku_id')->constrained()->restrictOnDelete();
+            $table->foreignId('inventory_location_id')->constrained()->restrictOnDelete();
             $table->integer('on_hand')->default(0);
             $table->integer('reserved')->default(0);
             $table->integer('reorder_level')->default(0);
@@ -31,8 +31,8 @@ return new class extends Migration
 
         Schema::create('inventory_movements', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('sku_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('inventory_location_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('sku_id')->constrained()->restrictOnDelete();
+            $table->foreignId('inventory_location_id')->constrained()->restrictOnDelete();
             $table->string('type');
             $table->integer('quantity_delta');
             $table->string('reference_type')->nullable();
