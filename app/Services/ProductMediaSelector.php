@@ -12,25 +12,17 @@ class ProductMediaSelector
     /** @return Collection<int, ProductMedia> */
     public function forProduct(Product $product, ?ProductVariant $variant = null): Collection
     {
-        $productMedia = ProductMedia::query()
-            ->where('product_id', $product->id)
+        $productMedia = $this->mediaFor($product)
             ->whereNull('product_variant_id')
-            ->with('mediaAsset.derivatives')
-            ->orderBy('display_order')
-            ->orderBy('id')
-            ->get();
+            ->values();
 
         if ($variant === null) {
             return $productMedia;
         }
 
-        $variantMedia = ProductMedia::query()
-            ->where('product_id', $product->id)
+        $variantMedia = $this->mediaFor($product)
             ->where('product_variant_id', $variant->id)
-            ->with('mediaAsset.derivatives')
-            ->orderBy('display_order')
-            ->orderBy('id')
-            ->get();
+            ->values();
 
         $variantRoles = $variantMedia->pluck('role')->unique();
 
@@ -39,5 +31,22 @@ class ProductMediaSelector
             ->concat($variantMedia)
             ->sortBy(fn (ProductMedia $media): array => [$media->display_order, $media->id])
             ->values();
+    }
+
+    /** @return Collection<int, ProductMedia> */
+    private function mediaFor(Product $product): Collection
+    {
+        if ($product->relationLoaded('media')) {
+            return $product->media
+                ->sortBy(fn (ProductMedia $media): array => [$media->display_order, $media->id])
+                ->values();
+        }
+
+        return ProductMedia::query()
+            ->where('product_id', $product->id)
+            ->with('mediaAsset.derivatives')
+            ->orderBy('display_order')
+            ->orderBy('id')
+            ->get();
     }
 }

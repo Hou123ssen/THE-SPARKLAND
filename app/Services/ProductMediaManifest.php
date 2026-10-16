@@ -25,7 +25,8 @@ class ProductMediaManifest
     /** @return array<string, mixed> */
     public function forMedia(ProductMedia $media): array
     {
-        $derivatives = $media->mediaAsset->derivatives;
+        $asset = $media->mediaAsset;
+        $derivatives = $asset->derivatives;
 
         return [
             'id' => $media->id,
@@ -33,12 +34,12 @@ class ProductMediaManifest
             'role' => $media->role,
             'kind' => $media->kind,
             'original' => [
-                'mime_type' => $media->mediaAsset->mime_type,
-                'width' => $media->mediaAsset->width,
-                'height' => $media->mediaAsset->height,
+                'mime_type' => $asset->mime_type,
+                'width' => $asset->width,
+                'height' => $asset->height,
             ],
             'responsive' => [
-                'fallback' => $this->fallbackDerivatives($derivatives),
+                'fallback' => $this->fallbackDerivatives($derivatives, $asset),
                 'webp' => $this->derivativesFor($derivatives, 'webp', 'responsive_'),
                 'avif' => $this->derivativesFor($derivatives, 'avif', 'responsive_'),
             ],
@@ -67,15 +68,28 @@ class ProductMediaManifest
     }
 
     /** @return list<array<string, mixed>> */
-    private function fallbackDerivatives($derivatives): array
+    private function fallbackDerivatives($derivatives, $asset): array
     {
-        return $derivatives
+        $fallbacks = $derivatives
             ->filter(fn (MediaDerivative $derivative): bool => str_starts_with($derivative->preset, 'responsive_') && in_array($derivative->format, ['jpeg', 'png'], true))
             ->sortBy('width')
             ->groupBy('width')
             ->map(fn ($items): array => $this->derivativeData($items->first()))
             ->values()
             ->all();
+
+        if ($fallbacks !== [] || $asset->disk !== 'public' || ! str_starts_with($asset->path, '/')) {
+            return $fallbacks;
+        }
+
+        // Legacy catalog media already lives at a public web path. It remains a
+        // temporary fallback only; private masters are never exposed here.
+        return [[
+            'url' => $asset->path,
+            'mime_type' => $asset->mime_type,
+            'width' => $asset->width,
+            'height' => $asset->height,
+        ]];
     }
 
     /** @return array<string, mixed> */
