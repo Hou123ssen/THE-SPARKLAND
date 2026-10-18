@@ -106,7 +106,7 @@ export default function Shop({ products, facets, filters, sort, pagination }) {
               </h1>
             </div>
             <p className="mt-14 max-w-[21rem] text-[0.7rem] uppercase leading-[1.8] tracking-[0.14em] text-[#111111]/65 lg:mt-20">
-              A working selection of optical forms and sun-ready silhouettes.
+              Product catalogue.
             </p>
           </div>
 
@@ -138,8 +138,6 @@ export default function Shop({ products, facets, filters, sort, pagination }) {
                 <select name="sort" defaultValue={sort} className="min-w-0 flex-1 appearance-none bg-transparent text-right text-[0.61rem] font-medium uppercase tracking-[0.12em] outline-none" aria-label="Sort products">
                   <option value="featured">Featured</option>
                   <option value="newest">Newest</option>
-                  <option value="price_asc">Price: low to high</option>
-                  <option value="price_desc">Price: high to low</option>
                 </select>
                 <span aria-hidden="true" className="text-[#0057C8]">+</span>
               </label>

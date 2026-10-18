@@ -13,7 +13,8 @@ use Illuminate\Pagination\LengthAwarePaginator;
 class ShopCatalog
 {
     private const PER_PAGE = 9;
-    private const SORTS = ['featured', 'newest', 'price_asc', 'price_desc'];
+    private const SORTS = ['featured', 'newest'];
+    private const FACETS = ['shape', 'colour', 'material', 'collection'];
 
     public function __construct(private readonly ProductMediaManifest $mediaManifest)
     {
@@ -24,10 +25,14 @@ class ShopCatalog
     {
         $facets = $this->facets();
         $filters = $this->validFilters($input, $facets);
+        $hasInvalidFacetInput = $this->hasInvalidFacetInput($input, $facets);
         $sort = in_array($input['sort'] ?? null, self::SORTS, true) ? $input['sort'] : 'featured';
 
         $products = $this->visibleProducts();
         $this->applyFilters($products, $filters);
+        if ($hasInvalidFacetInput) {
+            $products->whereRaw('1 = 0');
+        }
         $this->applySort($products, $sort);
 
         $paginator = $products
@@ -48,7 +53,7 @@ class ShopCatalog
     private function facets(): array
     {
         $variantFacet = fn (string $column): array => ProductVariant::query()
-            ->where('is_active', true)
+            ->tap(fn (Builder $variants) => $this->applySellableVariant($variants))
             ->whereNotNull($column)
             ->where($column, '!=', '')
             ->whereHas('product', fn (Builder $query) => $this->applyPublicVisibility($query))
@@ -78,7 +83,8 @@ class ShopCatalog
     private function validFilters(array $input, array $facets): array
     {
         $filters = [];
-        foreach ($facets as $name => $options) {
+        foreach (self::FACETS as $name) {
+            $options = $facets[$name] ?? [];
             $value = $input[$name] ?? null;
             if (! is_string($value) || ! in_array($value, array_column($options, 'value'), true)) {
                 continue;
@@ -87,6 +93,28 @@ class ShopCatalog
         }
 
         return $filters;
+    }
+
+    /**
+     * Unknown facet values are treated as an empty result rather than being
+     * ignored, so a non-sellable variant cannot be surfaced via a crafted URL.
+     *
+     * @param array<string, mixed> $input
+     * @param array<string, list<array{value: string, label: string}>> $facets
+     */
+    private function hasInvalidFacetInput(array $input, array $facets): bool
+    {
+        foreach (self::FACETS as $name) {
+            if (! array_key_exists($name, $input) || $input[$name] === '') {
+                continue;
+            }
+
+            if (! is_string($input[$name]) || ! in_array($input[$name], array_column($facets[$name] ?? [], 'value'), true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function visibleProducts(): Builder
@@ -100,11 +128,14 @@ class ShopCatalog
             ->where('products.is_active', true)
             ->where('products.status', Product::STATUS_ACTIVE)
             ->where(fn (Builder $published) => $published->whereNull('products.published_at')->orWhere('products.published_at', '<=', now()))
-            ->whereHas('variants', function (Builder $variants): void {
-                $variants
-                    ->where('is_active', true)
-                    ->whereHas('skus', fn (Builder $skus) => $skus->where('status', Sku::STATUS_ACTIVE));
-            });
+            ->whereHas('variants', fn (Builder $variants) => $this->applySellableVariant($variants));
+    }
+
+    private function applySellableVariant($variants): void
+    {
+        $variants
+            ->where('is_active', true)
+            ->whereHas('skus', fn (Builder $skus) => $skus->where('status', Sku::STATUS_ACTIVE));
     }
 
     /** @param array<string, string> $filters */
@@ -112,7 +143,10 @@ class ShopCatalog
     {
         foreach (['shape' => 'frame_shape', 'colour' => 'colour_name', 'material' => 'material'] as $filter => $column) {
             if (isset($filters[$filter])) {
-                $query->whereHas('variants', fn (Builder $variants) => $variants->where('is_active', true)->where($column, $filters[$filter]));
+                $query->whereHas('variants', function (Builder $variants) use ($column, $filters, $filter): void {
+                    $this->applySellableVariant($variants);
+                    $variants->where($column, $filters[$filter]);
+                });
             }
         }
 
@@ -125,25 +159,8 @@ class ShopCatalog
     {
         match ($sort) {
             'newest' => $query->orderByDesc('products.created_at')->orderByDesc('products.id'),
-            'price_asc' => $query->orderBy($this->priceSubquery('asc'))->orderBy('products.id'),
-            'price_desc' => $query->orderByDesc($this->priceSubquery('desc'))->orderBy('products.id'),
             default => $query->orderBy('products.display_order')->orderBy('products.id'),
         };
-    }
-
-    private function priceSubquery(string $direction): Builder
-    {
-        return Price::query()
-            ->select('prices.amount_minor')
-            ->join('skus', 'skus.id', '=', 'prices.sku_id')
-            ->join('product_variants', 'product_variants.id', '=', 'skus.product_variant_id')
-            ->whereColumn('product_variants.product_id', 'products.id')
-            ->where('product_variants.is_active', true)
-            ->where('skus.status', Sku::STATUS_ACTIVE)
-            ->where(fn (Builder $prices) => $prices->whereNull('prices.valid_from')->orWhere('prices.valid_from', '<=', now()))
-            ->where(fn (Builder $prices) => $prices->whereNull('prices.valid_to')->orWhere('prices.valid_to', '>=', now()))
-            ->orderBy('prices.amount_minor', $direction)
-            ->limit(1);
     }
 
     private function catalogRelations(): array
@@ -151,13 +168,14 @@ class ShopCatalog
         return [
             'collections' => fn ($collections) => $collections->where('is_active', true)->orderBy('display_order')->orderBy('id'),
             'variants' => function ($variants): void {
+                $this->applySellableVariant($variants);
                 $variants
-                    ->where('is_active', true)
                     ->orderBy('display_order')
                     ->orderBy('id')
                     ->with(['skus' => function ($skus): void {
                         $skus
                             ->where('status', Sku::STATUS_ACTIVE)
+                            ->orderBy('id')
                             ->with(['prices' => fn ($prices) => $this->currentPrices($prices)]);
                     }]);
             },
@@ -170,19 +188,17 @@ class ShopCatalog
         $prices
             ->where(fn (Builder $current) => $current->whereNull('valid_from')->orWhere('valid_from', '<=', now()))
             ->where(fn (Builder $current) => $current->whereNull('valid_to')->orWhere('valid_to', '>=', now()))
-            ->orderBy('amount_minor')
             ->orderBy('id');
     }
 
     /** @return array<string, mixed> */
     private function serializeProduct(Product $product): array
     {
+        // A catalogue card represents one ordered sellable variant and SKU. We
+        // intentionally never aggregate prices across variants or currencies.
         $variant = $product->variants->first();
-        $price = $product->variants
-            ->flatMap(fn (ProductVariant $item) => $item->skus)
-            ->flatMap(fn (Sku $sku) => $sku->prices)
-            ->sortBy('amount_minor')
-            ->first();
+        $sku = $variant?->skus->first();
+        $price = $this->unambiguousCurrentPrice($sku);
         $media = collect($this->mediaManifest->forProduct($product, $variant));
         $primaryMedia = $media->firstWhere('role', 'front') ?? $media->first();
         $colour = $variant?->colour_name ?: $product->color;
@@ -202,6 +218,15 @@ class ShopCatalog
                 'responsive' => $primaryMedia['responsive'],
             ],
         ];
+    }
+
+    private function unambiguousCurrentPrice(?Sku $sku): ?Price
+    {
+        if ($sku === null || $sku->prices->count() !== 1) {
+            return null;
+        }
+
+        return $sku->prices->first();
     }
 
     /** @return array<string, mixed> */
