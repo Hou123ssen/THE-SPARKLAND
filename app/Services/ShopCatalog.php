@@ -15,6 +15,11 @@ class ShopCatalog
     private const PER_PAGE = 9;
     private const SORTS = ['featured', 'newest'];
     private const FACETS = ['shape', 'colour', 'material', 'collection'];
+    private const VARIANT_FILTERS = [
+        'shape' => 'frame_shape',
+        'colour' => 'colour_name',
+        'material' => 'material',
+    ];
 
     public function __construct(private readonly ProductMediaManifest $mediaManifest)
     {
@@ -36,7 +41,7 @@ class ShopCatalog
         $this->applySort($products, $sort);
 
         $paginator = $products
-            ->with($this->catalogRelations())
+            ->with($this->catalogRelations($filters))
             ->paginate(self::PER_PAGE)
             ->withQueryString();
 
@@ -53,7 +58,7 @@ class ShopCatalog
     private function facets(): array
     {
         $variantFacet = fn (string $column): array => ProductVariant::query()
-            ->tap(fn (Builder $variants) => $this->applySellableVariant($variants))
+            ->tap(fn (Builder $variants) => $this->applyVariantConstraints($variants))
             ->whereNotNull($column)
             ->where($column, '!=', '')
             ->whereHas('product', fn (Builder $query) => $this->applyPublicVisibility($query))
@@ -128,26 +133,33 @@ class ShopCatalog
             ->where('products.is_active', true)
             ->where('products.status', Product::STATUS_ACTIVE)
             ->where(fn (Builder $published) => $published->whereNull('products.published_at')->orWhere('products.published_at', '<=', now()))
-            ->whereHas('variants', fn (Builder $variants) => $this->applySellableVariant($variants));
+            ->whereHas('variants', fn (Builder $variants) => $this->applyVariantConstraints($variants));
     }
 
-    private function applySellableVariant($variants): void
+    /**
+     * Constrains a single variant relation/query to catalogue-sellable variants
+     * and, when present, every active variant-level filter at once.
+     *
+     * @param array<string, string> $filters
+     */
+    private function applyVariantConstraints($variants, array $filters = []): void
     {
         $variants
             ->where('is_active', true)
             ->whereHas('skus', fn (Builder $skus) => $skus->where('status', Sku::STATUS_ACTIVE));
+
+        foreach (self::VARIANT_FILTERS as $filter => $column) {
+            if (isset($filters[$filter])) {
+                $variants->where($column, $filters[$filter]);
+            }
+        }
     }
 
     /** @param array<string, string> $filters */
     private function applyFilters(Builder $query, array $filters): void
     {
-        foreach (['shape' => 'frame_shape', 'colour' => 'colour_name', 'material' => 'material'] as $filter => $column) {
-            if (isset($filters[$filter])) {
-                $query->whereHas('variants', function (Builder $variants) use ($column, $filters, $filter): void {
-                    $this->applySellableVariant($variants);
-                    $variants->where($column, $filters[$filter]);
-                });
-            }
+        if (array_intersect_key($filters, self::VARIANT_FILTERS) !== []) {
+            $query->whereHas('variants', fn (Builder $variants) => $this->applyVariantConstraints($variants, $filters));
         }
 
         if (isset($filters['collection'])) {
@@ -163,12 +175,13 @@ class ShopCatalog
         };
     }
 
-    private function catalogRelations(): array
+    /** @param array<string, string> $filters */
+    private function catalogRelations(array $filters): array
     {
         return [
             'collections' => fn ($collections) => $collections->where('is_active', true)->orderBy('display_order')->orderBy('id'),
-            'variants' => function ($variants): void {
-                $this->applySellableVariant($variants);
+            'variants' => function ($variants) use ($filters): void {
+                $this->applyVariantConstraints($variants, $filters);
                 $variants
                     ->orderBy('display_order')
                     ->orderBy('id')

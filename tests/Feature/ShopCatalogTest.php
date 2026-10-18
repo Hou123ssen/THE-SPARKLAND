@@ -130,6 +130,52 @@ class ShopCatalogTest extends TestCase
         );
     }
 
+    public function test_variant_filter_selects_the_matching_variant_for_catalogue_serialization(): void
+    {
+        $product = $this->product('axis-01', 'Oval', 'Black', 'Acetate', 50000);
+        $black = ProductVariant::query()->where('product_id', $product->id)->firstOrFail();
+        $red = $this->additionalVariant($product, 'axis-01-red', 'Square', 'Red', 'Titanium', 10000, 1);
+        $this->variantMedia($product, $black, 'axis-01-black');
+        $this->variantMedia($product, $red, 'axis-01-red');
+
+        $this->get('/shop?colour=Red')->assertInertia(fn (Assert $page) => $page
+            ->has('products', 1)
+            ->where('products.0.slug', $product->slug)
+            ->where('products.0.attributes.colour', 'Red')
+            ->where('products.0.attributes.shape', 'Square')
+            ->where('products.0.attributes.material', 'Titanium')
+            ->where('products.0.price.amount_minor', 10000)
+            ->where('products.0.media.responsive.fallback.0.url', fn (string $url) => str_ends_with($url, '/storage/products/axis-01-red-960.png'))
+        );
+    }
+
+    public function test_variant_filters_must_match_one_sellable_variant(): void
+    {
+        $product = $this->product('axis-01', 'Oval', 'Black', 'Acetate', 50000);
+        $this->additionalVariant($product, 'axis-01-red', 'Square', 'Red', 'Titanium', 10000, 1);
+
+        $this->get('/shop?shape=Oval&colour=Red')->assertInertia(fn (Assert $page) => $page
+            ->where('filters.shape', 'Oval')
+            ->where('filters.colour', 'Red')
+            ->has('products', 0)
+        );
+    }
+
+    public function test_valid_multi_filter_selects_its_matching_sellable_variant(): void
+    {
+        $product = $this->product('axis-01', 'Oval', 'Black', 'Acetate', 50000);
+        $this->additionalVariant($product, 'axis-01-red', 'Square', 'Red', 'Titanium', 10000, 1);
+
+        $this->get('/shop?shape=Square&colour=Red&material=Titanium')->assertInertia(fn (Assert $page) => $page
+            ->has('products', 1)
+            ->where('products.0.slug', $product->slug)
+            ->where('products.0.attributes.shape', 'Square')
+            ->where('products.0.attributes.colour', 'Red')
+            ->where('products.0.attributes.material', 'Titanium')
+            ->where('products.0.price.amount_minor', 10000)
+        );
+    }
+
     public function test_ambiguous_current_prices_are_not_serialized(): void
     {
         $product = $this->product('axis-01', 'Oval', 'Ink Black', 'Acetate', 24500);
