@@ -1,6 +1,11 @@
 import { Menu, Search, ShoppingBag } from "lucide-react";
 
-const navItems = ["Shop", "Collections", "Journal", "About"];
+const navItems = [
+  { label: "Shop", href: "/shop" },
+  { label: "Collections", href: "/" },
+  { label: "Journal", href: "/" },
+  { label: "About", href: "/" },
+];
 
 function Navbar() {
   return (
@@ -24,11 +29,11 @@ function Navbar() {
         <div className="hidden items-center gap-7 md:flex lg:gap-9">
           {navItems.map((item) => (
             <a
-              key={item}
-              href="/"
+              key={item.label}
+              href={item.href}
               className="text-[0.65rem] font-medium uppercase tracking-[0.2em] text-[#111111] transition-colors hover:text-neutral-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-4 focus-visible:ring-offset-white"
             >
-              {item}
+              {item.label}
             </a>
           ))}
         </div>
