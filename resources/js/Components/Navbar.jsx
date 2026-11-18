@@ -2,7 +2,7 @@ import { Menu, Search, ShoppingBag } from "lucide-react";
 
 const navItems = [
   { label: "Shop", href: "/shop" },
-  { label: "Collections", href: "/" },
+  { label: "Collections", href: "/collections" },
   { label: "Journal", href: "/" },
   { label: "About", href: "/" },
 ];

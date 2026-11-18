@@ -188,6 +188,40 @@ class ShopCatalogTest extends TestCase
         );
     }
 
+    public function test_catalogue_prices_expose_only_valid_compare_at_prices(): void
+    {
+        $normal = $this->product('normal-01', 'Oval', 'Black', 'Acetate', 32000);
+        $sale = $this->product('sale-02', 'Square', 'Red', 'Titanium', 32000, [], 'EUR', ['compare_at_minor' => 40000]);
+        $equal = $this->product('equal-03', 'Round', 'Grey', 'Acetate', 32000, [], 'EUR', ['compare_at_minor' => 32000]);
+        $lower = $this->product('lower-04', 'Panto', 'Brown', 'Acetate', 32000, [], 'EUR', ['compare_at_minor' => 30000]);
+
+        $this->get('/shop')->assertInertia(fn (Assert $page) => $page
+            ->where('products.0.slug', $normal->slug)
+            ->where('products.0.price.amount_minor', 32000)
+            ->where('products.0.price.compare_at_minor', null)
+            ->where('products.1.slug', $sale->slug)
+            ->where('products.1.price.amount_minor', 32000)
+            ->where('products.1.price.compare_at_minor', 40000)
+            ->where('products.2.slug', $equal->slug)
+            ->where('products.2.price.compare_at_minor', null)
+            ->where('products.3.slug', $lower->slug)
+            ->where('products.3.price.compare_at_minor', null)
+        );
+    }
+
+    public function test_non_current_prices_do_not_supply_catalogue_prices(): void
+    {
+        $future = $this->product('future-price-01', 'Oval', 'Black', 'Acetate', 32000, [], 'EUR', ['valid_from' => now()->addDay()]);
+        $expired = $this->product('expired-price-02', 'Square', 'Grey', 'Titanium', 32000, [], 'EUR', ['valid_to' => now()->subDay()]);
+
+        $this->get('/shop')->assertInertia(fn (Assert $page) => $page
+            ->where('products.0.slug', $future->slug)
+            ->where('products.0.price', null)
+            ->where('products.1.slug', $expired->slug)
+            ->where('products.1.price', null)
+        );
+    }
+
     public function test_facets_and_variant_filters_require_the_same_sellable_variant(): void
     {
         $black = $this->product('black-01', 'Oval', 'Black', 'Acetate', 24500);
@@ -247,7 +281,7 @@ class ShopCatalogTest extends TestCase
         $this->assertStringEndsWith('/storage/products/derivative-first-960.png', $derivativeData['responsive']['fallback'][0]['url']);
     }
 
-    private function product(string $slug, string $shape, string $colour, string $material, int $amount, array $attributes = [], string $currency = 'EUR'): Product
+    private function product(string $slug, string $shape, string $colour, string $material, int $amount, array $attributes = [], string $currency = 'EUR', array $priceAttributes = []): Product
     {
         $collection = Collection::firstOrCreate(['slug' => 'essential-forms'], ['name' => 'Essential Forms', 'display_order' => 1]);
         $product = Product::create([
@@ -268,7 +302,7 @@ class ShopCatalogTest extends TestCase
             'display_order' => 0,
         ]);
         $sku = Sku::create(['product_variant_id' => $variant->id, 'sku' => "SPK-{$slug}"]);
-        Price::create(['sku_id' => $sku->id, 'currency' => $currency, 'amount_minor' => $amount]);
+        Price::create(['sku_id' => $sku->id, 'currency' => $currency, 'amount_minor' => $amount, ...$priceAttributes]);
         $asset = MediaAsset::create([
             'disk' => 'local',
             'path' => "products/{$product->id}/masters/private-{$slug}.png",
