@@ -3,46 +3,7 @@ import { useState } from "react";
 import { ArrowLeft, ArrowRight, ArrowUpRight, SlidersHorizontal } from "lucide-react";
 import Navbar from "../Components/Navbar.jsx";
 import { SHOP_PRESENTATION_CONTENT, SHOP_PRESENTATION_SLOTS } from "../Components/ShopPresentationSlots.jsx";
-
-function priceLabel(price) {
-  if (!price) return null;
-
-  return `${price.currency} ${new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(price.amount_minor / 100)}`;
-}
-
-function ProductMedia({ media, name, eager = false, className = "" }) {
-  const responsive = media?.responsive;
-  const fallback = responsive?.fallback ?? [];
-  const fallbackImage = fallback.at(-1);
-
-  if (!fallbackImage) {
-    return <div className={`h-full w-full bg-[#f4f4f1] ${className}`} aria-hidden="true" />;
-  }
-
-  return (
-    <picture className="block h-full w-full overflow-hidden">
-      {responsive?.avif?.length > 0 && (
-        <source type="image/avif" srcSet={responsive.avif.map((image) => `${image.url} ${image.width}w`).join(", ")} sizes="(min-width: 1024px) 32vw, 100vw" />
-      )}
-      {responsive?.webp?.length > 0 && (
-        <source type="image/webp" srcSet={responsive.webp.map((image) => `${image.url} ${image.width}w`).join(", ")} sizes="(min-width: 1024px) 32vw, 100vw" />
-      )}
-      <img
-        src={fallbackImage.url}
-        srcSet={fallback.map((image) => `${image.url} ${image.width ?? 960}w`).join(", ")}
-        sizes="(min-width: 1024px) 32vw, 100vw"
-        alt={media.alt || name}
-        loading={eager ? "eager" : "lazy"}
-        fetchPriority={eager ? "high" : "auto"}
-        decoding="async"
-        className={`h-full w-full object-contain transition-transform duration-500 ease-out group-hover:scale-[1.025] group-focus-visible:scale-[1.025] motion-reduce:transform-none ${className}`}
-      />
-    </picture>
-  );
-}
+import StorefrontProductCard from "../Components/StorefrontProductCard.jsx";
 
 function FilterSelect({ name, label, options, value }) {
   if (!options?.length) return null;
@@ -63,30 +24,6 @@ function CampaignImage({ slot, imageClassName = "", eager = false }) {
   return <img src={slot.src} alt={slot.alt} className={`h-full w-full ${imageClassName}`} loading={eager ? "eager" : "lazy"} />;
 }
 
-function ProductTile({ product, kind = "small", eager = false }) {
-  if (!product) return null;
-
-  const metadata = [product.attributes.shape, product.attributes.colour].filter(Boolean).join(" / ");
-  const large = kind === "anchor";
-
-  return (
-    <article className={`group min-w-0 ${large ? "h-full" : ""}`}>
-      <Link href={`/products/${product.slug}`} className={`flex h-full flex-col overflow-hidden bg-[#f1f1ee] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0057C8] focus-visible:ring-offset-4 ${large ? "lg:h-[490px]" : "lg:h-[237px]"}`} aria-label={`View ${product.name}`}>
-        <div className="relative min-h-[14rem] flex-1 overflow-hidden lg:min-h-0">
-          <div className={`h-full w-full mix-blend-multiply ${large ? "scale-[1.7]" : "scale-[2.2]"}`}><ProductMedia media={product.media} name={product.name} eager={eager} /></div>
-        </div>
-        <div className="flex shrink-0 items-end justify-between gap-4 px-5 pb-4 pt-2">
-          <div>
-            <h3 className={`${large ? "text-[1.35rem]" : "text-[1.05rem]"} font-headline font-black uppercase leading-[0.95] transition-colors group-hover:text-[#0057C8]`}>{product.name}</h3>
-            {metadata && <p className="mt-2 text-[0.55rem] font-medium uppercase tracking-[0.14em] text-[#111111]/55">{metadata}</p>}
-          </div>
-          <div className="flex shrink-0 items-center gap-3">{priceLabel(product.price) && <span className="text-[0.58rem] font-bold uppercase tracking-[0.09em] text-[#111111]/75">{priceLabel(product.price)}</span>}<span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#111111]/50"><ArrowUpRight aria-hidden="true" size={16} /></span></div>
-        </div>
-      </Link>
-    </article>
-  );
-}
-
 function TextLink({ children, href = "#catalogue", inverted = false }) {
   return (
     <a href={href} className={`inline-flex items-center gap-3 text-[0.61rem] font-bold uppercase tracking-[0.16em] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0057C8] focus-visible:ring-offset-4 ${inverted ? "text-white hover:text-[#78a9f7]" : "text-[#111111] hover:text-[#0057C8]"}`}>
@@ -102,7 +39,7 @@ function RemainingProducts({ products }) {
 
   return (
     <div className="mt-4">
-      {expanded && <div id="remaining-page-products" className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">{products.map((product) => <ProductTile key={product.id} product={product} />)}</div>}
+      {expanded && <div id="remaining-page-products" className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">{products.map((product) => <StorefrontProductCard key={product.id} product={product} />)}</div>}
       <button type="button" aria-expanded={expanded} aria-controls={expanded ? "remaining-page-products" : undefined} onClick={() => setExpanded(!expanded)} className="text-[0.6rem] font-bold uppercase tracking-[0.14em] text-[#0057C8] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0057C8] focus-visible:ring-offset-2">{expanded ? "View less" : `View ${products.length} more on this page`}</button>
     </div>
   );
@@ -160,7 +97,7 @@ export default function Shop({ products, facets, filters, sort, pagination }) {
           {products.length === 0 ? (
             <div className="flex min-h-[28rem] flex-col items-start justify-center bg-[#f4f4f1] p-8"><h3 className="font-headline text-[clamp(2.4rem,4vw,4.5rem)] font-black uppercase leading-[0.84] tracking-[-0.055em]">No frames match<br />this view.</h3><Link href={clearHref} className="mt-8 rounded-full bg-[#0057C8] px-5 py-3 text-[0.6rem] font-bold uppercase tracking-[0.16em] text-white">Clear filters</Link></div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,36fr)_minmax(0,64fr)]"><div><ProductTile product={initialProducts[0]} kind="anchor" eager /></div><div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{initialProducts.slice(1).map((product, index) => <ProductTile key={product.id} product={product} eager={index < 2} />)}</div></div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,36fr)_minmax(0,64fr)]"><div><StorefrontProductCard product={initialProducts[0]} kind="anchor" eager /></div><div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{initialProducts.slice(1).map((product, index) => <StorefrontProductCard key={product.id} product={product} eager={index < 2} />)}</div></div>
           )}
           <RemainingProducts key={products.map((product) => product.id).join(",")} products={remainderProducts} />
           {pagination.last_page > 1 && <nav className="mt-4 flex items-center gap-3 pt-2" aria-label="Catalogue pagination">{previous?.url && <Link href={previous.url} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#111111]/18 hover:border-[#0057C8] hover:text-[#0057C8]" aria-label="Previous catalogue page"><ArrowLeft aria-hidden="true" size={16} /></Link>}{pageLinks.map((link) => <Link key={link.label} href={link.url || "#"} aria-current={link.active ? "page" : undefined} className={`inline-flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-[0.62rem] font-bold tracking-[0.12em] ${link.active ? "bg-[#0057C8] text-white" : "border border-[#111111]/18 hover:border-[#0057C8] hover:text-[#0057C8]"}`}>{link.label.padStart(2, "0")}</Link>)}{next?.url && <Link href={next.url} className="ml-auto inline-flex items-center gap-3 text-[0.6rem] font-bold uppercase tracking-[0.16em] hover:text-[#0057C8]">Next page <ArrowRight aria-hidden="true" size={16} /></Link>}</nav>}
