@@ -66,6 +66,11 @@ class Product extends Model
         return $this->hasMany(ProductMedia::class);
     }
 
+    public function options(): HasMany
+    {
+        return $this->hasMany(ProductOption::class);
+    }
+
     protected function casts(): array
     {
         return [
