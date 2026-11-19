@@ -22,7 +22,7 @@ class StorefrontCatalog
         'material' => 'material',
     ];
 
-    public function __construct(private readonly ProductMediaManifest $mediaManifest)
+    public function __construct(protected readonly ProductMediaManifest $mediaManifest)
     {
     }
 
