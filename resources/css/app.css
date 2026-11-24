@@ -4,6 +4,14 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --motion-micro: 160ms;
+  --motion-control: 400ms;
+  --motion-panel: 580ms;
+  --motion-route: 580ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 *,
 *::before,
 *::after {
@@ -40,4 +48,123 @@ img {
 
 .hero-editorial-stage {
   background: #ffffff;
+}
+
+.motion-press {
+  transition: transform var(--motion-micro) var(--motion-ease), opacity var(--motion-micro) ease, color var(--motion-micro) ease, background-color var(--motion-micro) ease, border-color var(--motion-micro) ease;
+}
+
+.motion-press:not(:disabled):not(.motion-no-scale):active { transform: scale(.985); }
+.motion-press:not(:disabled).motion-no-scale:active { opacity: .75; }
+
+@media (hover: hover) and (pointer: fine) {
+  .motion-nav-link { transition: color var(--motion-micro) ease, opacity var(--motion-micro) ease; }
+  .motion-nav-link:hover { color: #0057c8; }
+  .motion-nav-link svg { transition: transform var(--motion-control) var(--motion-ease); }
+  .motion-nav-link:hover svg { transform: translateX(4px); }
+}
+
+@supports (view-transition-name: sparkland-product) {
+  ::view-transition-group(*) {
+    animation-duration: 720ms;
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  ::view-transition-old(*) {
+    animation: 720ms var(--motion-ease) both shared-media-old;
+  }
+
+  ::view-transition-new(*) {
+    animation: 720ms var(--motion-ease) both shared-media-new;
+  }
+
+  ::view-transition-old(root) {
+    animation: 520ms var(--motion-ease) both route-out;
+  }
+
+  ::view-transition-new(root) {
+    animation: 600ms var(--motion-ease) both route-in;
+  }
+
+  /* A Collection hero owns this visit: never layer the root fade over its
+     shared-media geometry. */
+  html[data-sparkland-shared-collection]::view-transition-old(root),
+  html[data-sparkland-shared-collection]::view-transition-new(root) {
+    animation: none !important;
+    opacity: 1 !important;
+    mix-blend-mode: normal;
+  }
+
+  html[data-sparkland-shared-collection]::view-transition-group(root) {
+    animation: none !important;
+    mix-blend-mode: normal;
+  }
+
+  html[data-sparkland-shared-collection]::view-transition-group(sparkland-collection-media) {
+    animation-duration: 720ms;
+    animation-timing-function: var(--motion-ease);
+    mix-blend-mode: normal;
+  }
+
+  html[data-sparkland-shared-collection]::view-transition-old(sparkland-collection-media) {
+    animation: 720ms var(--motion-ease) both collection-media-old;
+    mix-blend-mode: normal;
+  }
+
+  html[data-sparkland-shared-collection]::view-transition-new(sparkland-collection-media) {
+    animation: 720ms var(--motion-ease) both collection-media-new;
+    mix-blend-mode: normal;
+  }
+
+  ::view-transition-group(sparkland-navbar),
+  ::view-transition-old(sparkland-navbar),
+  ::view-transition-new(sparkland-navbar) { animation-duration: 0.01ms; }
+}
+
+@keyframes fade-out {
+  to { opacity: 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes route-in {
+  from { opacity: 0; transform: translateY(30px) scale(1.01); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes route-out {
+  to { opacity: 0; transform: translateY(-16px) scale(.985); }
+}
+
+@keyframes shared-media-old {
+  0%, 68% { opacity: 1; }
+  100% { opacity: .15; }
+}
+
+@keyframes shared-media-new {
+  0% { opacity: .08; }
+  40%, 100% { opacity: 1; }
+}
+
+@keyframes collection-media-old {
+  0%, 62% { opacity: 1; }
+  63%, 100% { opacity: 0; }
+}
+
+@keyframes collection-media-new {
+  0%, 62% { opacity: 0; }
+  63%, 100% { opacity: 1; }
+}
+
+.collection-shared-media { mix-blend-mode: normal; }
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-press, .motion-nav-link, .motion-nav-link svg { transition-duration: 0.01ms !important; }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.01ms !important;
+  }
 }
