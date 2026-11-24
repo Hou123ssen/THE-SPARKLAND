@@ -7,6 +7,7 @@ use App\Models\CartItem;
 use App\Models\Price;
 use App\Models\Sku;
 use Illuminate\Contracts\Session\Session;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -92,7 +93,10 @@ class CartService
 
     public function update(Session $session, int $itemId, int $quantity): Cart
     {
-        $cart = $this->current($session);
+        $cart = $this->existing($session);
+        if ($cart === null) {
+            throw (new ModelNotFoundException)->setModel(Cart::class);
+        }
 
         DB::transaction(function () use ($cart, $itemId, $quantity): void {
             Cart::query()->whereKey($cart->id)->lockForUpdate()->firstOrFail();
@@ -115,7 +119,10 @@ class CartService
 
     public function remove(Session $session, int $itemId): Cart
     {
-        $cart = $this->current($session);
+        $cart = $this->existing($session);
+        if ($cart === null) {
+            throw (new ModelNotFoundException)->setModel(Cart::class);
+        }
 
         DB::transaction(function () use ($cart, $itemId): void {
             Cart::query()->whereKey($cart->id)->lockForUpdate()->firstOrFail();
@@ -140,16 +147,33 @@ class CartService
         ]);
 
         $items = $cart->items->map(fn (CartItem $item): array => $this->serializeItem($item))->all();
-        $lineTotals = collect($items)->pluck('line_total');
         $subtotal = null;
-        if ($lineTotals->every(fn ($total): bool => $total !== null)) {
-            $currencies = $lineTotals->pluck('currency')->unique()->values();
-            if ($currencies->count() === 1) {
-                $subtotal = [
-                    'amount_minor' => $lineTotals->sum('amount_minor'),
-                    'currency' => $currencies->first(),
-                ];
+        $subtotalAmount = 0;
+        $subtotalCurrency = null;
+        $subtotalSafe = true;
+        foreach ($items as $item) {
+            $lineTotal = $item['line_total'];
+            if ($lineTotal === null || ! is_int($lineTotal['amount_minor'])) {
+                $subtotalSafe = false;
+                break;
             }
+            if ($subtotalCurrency === null) {
+                $subtotalCurrency = $lineTotal['currency'];
+            } elseif ($subtotalCurrency !== $lineTotal['currency']) {
+                $subtotalSafe = false;
+                break;
+            }
+            if ($lineTotal['amount_minor'] > PHP_INT_MAX - $subtotalAmount) {
+                $subtotalSafe = false;
+                break;
+            }
+            $subtotalAmount += $lineTotal['amount_minor'];
+        }
+        if ($subtotalSafe && $subtotalCurrency !== null) {
+            $subtotal = [
+                'amount_minor' => $subtotalAmount,
+                'currency' => $subtotalCurrency,
+            ];
         }
 
         return [

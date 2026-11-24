@@ -162,6 +162,20 @@ class CartTest extends TestCase
         $this->assertDatabaseCount('carts', 0);
     }
 
+    public function test_update_without_an_active_cart_does_not_create_one(): void
+    {
+        $this->patchJson('/cart/items/999999', ['quantity' => 1])->assertNotFound();
+
+        $this->assertDatabaseCount('carts', 0);
+    }
+
+    public function test_delete_without_an_active_cart_does_not_create_one(): void
+    {
+        $this->deleteJson('/cart/items/999999')->assertNotFound();
+
+        $this->assertDatabaseCount('carts', 0);
+    }
+
     public function test_cart_mutations_block_concurrent_requests_for_the_same_session(): void
     {
         foreach (['cart.items.store', 'cart.items.update', 'cart.items.destroy'] as $name) {
@@ -180,6 +194,23 @@ class CartTest extends TestCase
             ->assertJsonPath('cart.items.0.sale.compare_at_minor', 10000)
             ->assertJsonPath('cart.items.0.sale.discount_percentage', 20)
             ->assertJsonPath('cart.items.0.line_total.amount_minor', 16000);
+    }
+
+    public function test_subtotal_overflow_returns_null_instead_of_a_float(): void
+    {
+        $price = intdiv(PHP_INT_MAX, 2) + 1;
+        [, , $firstSku] = $this->sellableSku(price: $price, stock: 1);
+        [, , $secondSku] = $this->sellableSku(price: $price, stock: 1);
+
+        $this->postJson('/cart/items', ['sku_id' => $firstSku->id])->assertOk();
+        $this->postJson('/cart/items', ['sku_id' => $secondSku->id])
+            ->assertOk()
+            ->assertJsonPath('cart.items.0.line_total.amount_minor', $price)
+            ->assertJsonPath('cart.items.1.line_total.amount_minor', $price)
+            ->assertJsonPath('cart.merchandise_subtotal', null);
+
+        $this->assertIsInt($price);
+        $this->assertDatabaseCount('cart_items', 2);
     }
 
     public function test_cart_read_recalculates_price_instead_of_locking_add_time_price(): void
