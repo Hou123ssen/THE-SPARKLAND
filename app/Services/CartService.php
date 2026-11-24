@@ -14,6 +14,7 @@ use Illuminate\Validation\ValidationException;
 class CartService
 {
     public const SESSION_KEY = 'cart.active_id';
+    public const MAX_QUANTITY = 4_294_967_295;
 
     public function __construct(
         private readonly SkuCommerceState $commerceState,
@@ -40,6 +41,15 @@ class CartService
         return $cart;
     }
 
+    public function existing(Session $session): ?Cart
+    {
+        $cartId = $session->get(self::SESSION_KEY);
+
+        return is_int($cartId) || ctype_digit((string) $cartId)
+            ? Cart::query()->whereKey((int) $cartId)->where('status', Cart::STATUS_ACTIVE)->first()
+            : null;
+    }
+
     public function add(Session $session, int $skuId, int $quantity): Cart
     {
         $cart = $this->current($session);
@@ -56,7 +66,13 @@ class CartService
                 ->where('sku_id', $sku->id)
                 ->lockForUpdate()
                 ->first();
-            $newQuantity = ($item?->quantity ?? 0) + $quantity;
+            $existingQuantity = $item?->quantity ?? 0;
+            if ($quantity > self::MAX_QUANTITY || $existingQuantity > self::MAX_QUANTITY - $quantity) {
+                throw ValidationException::withMessages([
+                    'quantity' => 'The requested quantity exceeds the technical cart limit.',
+                ]);
+            }
+            $newQuantity = $existingQuantity + $quantity;
             $this->validateQuantity($sku, $newQuantity);
             $this->validateCartCurrency($cart, $sku);
 
@@ -150,6 +166,14 @@ class CartService
             throw ValidationException::withMessages(['sku_id' => 'The selected item is unavailable for purchase.']);
         }
 
+        $amountMinor = max(1, (int) $state['price']->amount_minor);
+        $safeMaximum = min(self::MAX_QUANTITY, intdiv(PHP_INT_MAX, $amountMinor));
+        if ($quantity < 1 || $quantity > $safeMaximum) {
+            throw ValidationException::withMessages([
+                'quantity' => 'The requested quantity exceeds the technical cart limit.',
+            ]);
+        }
+
         $maximum = $state['maximum_quantity'];
         if ($maximum !== null && $quantity > $maximum) {
             throw ValidationException::withMessages([
@@ -190,10 +214,13 @@ class CartService
             'amount_minor' => $price->amount_minor,
             'currency' => $price->currency,
         ];
-        $lineTotal = $price === null ? null : [
-            'amount_minor' => $price->amount_minor * $item->quantity,
-            'currency' => $price->currency,
-        ];
+        $lineTotal = null;
+        if ($price !== null && $item->quantity <= intdiv(PHP_INT_MAX, max(1, $price->amount_minor))) {
+            $lineTotal = [
+                'amount_minor' => $price->amount_minor * $item->quantity,
+                'currency' => $price->currency,
+            ];
+        }
         $media = $product === null ? collect() : collect($this->mediaManifest->forProduct($product, $variant));
         $primaryMedia = $media->firstWhere('role', 'front') ?? $media->first();
 
@@ -228,7 +255,7 @@ class CartService
             'sale' => $state['sale'],
             'line_total' => $lineTotal,
             'availability' => $state['availability'],
-            'can_purchase' => $state['can_purchase'] && $price !== null,
+            'can_purchase' => $state['can_purchase'] && $price !== null && $lineTotal !== null,
         ];
     }
 

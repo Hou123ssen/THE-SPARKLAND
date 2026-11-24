@@ -151,6 +151,25 @@ class CartTest extends TestCase
         $this->assertDatabaseCount('carts', 1);
     }
 
+    public function test_empty_cart_read_does_not_persist_a_cart(): void
+    {
+        $this->getJson('/cart')
+            ->assertOk()
+            ->assertJsonPath('cart.item_count', 0)
+            ->assertJsonPath('cart.merchandise_subtotal', null)
+            ->assertJsonCount(0, 'cart.items');
+
+        $this->assertDatabaseCount('carts', 0);
+    }
+
+    public function test_cart_mutations_block_concurrent_requests_for_the_same_session(): void
+    {
+        foreach (['cart.items.store', 'cart.items.update', 'cart.items.destroy'] as $name) {
+            $route = app('router')->getRoutes()->getByName($name);
+            $this->assertNotNull($route?->locksFor(), $name.' must use session blocking');
+        }
+    }
+
     public function test_sale_price_and_discount_are_derived_from_current_price(): void
     {
         [, , $sku] = $this->sellableSku(price: 8000, stock: 3, compareAt: 10000);
@@ -245,6 +264,41 @@ class CartTest extends TestCase
             ->assertOk()
             ->assertJsonPath('cart.items.0.availability', 'backorder')
             ->assertJsonPath('cart.items.0.can_purchase', true);
+    }
+
+    public function test_quantity_beyond_safe_money_arithmetic_is_rejected_cleanly(): void
+    {
+        [, , $sku] = $this->sellableSku(
+            price: 3_000_000_000,
+            stock: 0,
+            skuAttributes: ['is_backorderable' => true],
+        );
+        $unsafeQuantity = intdiv(PHP_INT_MAX, 3_000_000_000) + 1;
+
+        $this->postJson('/cart/items', ['sku_id' => $sku->id, 'quantity' => $unsafeQuantity])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('quantity');
+
+        $this->assertDatabaseCount('cart_items', 0);
+    }
+
+    public function test_merged_quantity_beyond_technical_limit_is_rejected_cleanly(): void
+    {
+        [, , $sku] = $this->sellableSku(stock: 0, skuAttributes: ['is_backorderable' => true]);
+
+        $this->postJson('/cart/items', [
+            'sku_id' => $sku->id,
+            'quantity' => CartService::MAX_QUANTITY,
+        ])->assertOk();
+
+        $this->postJson('/cart/items', ['sku_id' => $sku->id, 'quantity' => 1])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('quantity');
+
+        $this->assertDatabaseHas('cart_items', [
+            'sku_id' => $sku->id,
+            'quantity' => CartService::MAX_QUANTITY,
+        ]);
     }
 
     public function test_adding_to_cart_does_not_decrement_or_reserve_inventory(): void

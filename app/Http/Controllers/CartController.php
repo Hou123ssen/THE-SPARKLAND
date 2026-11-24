@@ -12,9 +12,13 @@ class CartController extends Controller
 {
     public function show(Request $request, CartService $carts): JsonResponse
     {
-        $cart = $carts->current($request->session());
+        $cart = $carts->existing($request->session());
 
-        return response()->json(['cart' => $carts->serialize($cart)]);
+        return response()->json(['cart' => $cart === null ? [
+            'item_count' => 0,
+            'merchandise_subtotal' => null,
+            'items' => [],
+        ] : $carts->serialize($cart)]);
     }
 
     public function store(StoreCartItemRequest $request, CartService $carts): JsonResponse
