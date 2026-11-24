@@ -22,9 +22,7 @@ class StorefrontCatalog
         'material' => 'material',
     ];
 
-    public function __construct(protected readonly ProductMediaManifest $mediaManifest)
-    {
-    }
+    public function __construct(protected readonly ProductMediaManifest $mediaManifest) {}
 
     protected function visibleProducts(): Builder
     {
@@ -133,10 +131,7 @@ class StorefrontCatalog
 
     protected function currentPrices($prices): void
     {
-        $prices
-            ->where(fn (Builder $current) => $current->whereNull('valid_from')->orWhere('valid_from', '<=', now()))
-            ->where(fn (Builder $current) => $current->whereNull('valid_to')->orWhere('valid_to', '>=', now()))
-            ->orderBy('id');
+        $prices->current()->orderBy('id');
     }
 
     /** @return array<string, mixed> */
