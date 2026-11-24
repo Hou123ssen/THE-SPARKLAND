@@ -7,12 +7,18 @@ use App\Models\ProductOption;
 use App\Models\ProductOptionValue;
 use App\Models\ProductVariant;
 use App\Models\Sku;
-use Illuminate\Database\Eloquent\Builder;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /** Public, selection-safe contract for the Product Detail page. */
 class ProductDetail extends StorefrontCatalog
 {
+    public function __construct(
+        ProductMediaManifest $mediaManifest,
+        private readonly SkuCommerceState $commerceState,
+    ) {
+        parent::__construct($mediaManifest);
+    }
+
     /** @return array<string, mixed> */
     public function forSlug(string $slug): array
     {
@@ -28,7 +34,7 @@ class ProductDetail extends StorefrontCatalog
                         'skus' => function ($skus): void {
                             $skus->where('status', Sku::STATUS_ACTIVE)->orderBy('id')->with([
                                 'prices' => fn ($prices) => $this->currentPrices($prices),
-                                'inventoryLevels' => fn ($levels) => $levels->whereHas('location', fn (Builder $locations) => $locations->where('is_active', true)),
+                                'inventoryLevels.location',
                                 'optionValues.option',
                             ]);
                         },
@@ -39,15 +45,14 @@ class ProductDetail extends StorefrontCatalog
             ->firstOrFail();
 
         $options = $product->options->map(fn (ProductOption $option): array => $this->serializeOption($option))->all();
-        $requiredOptionIds = $product->options->where('is_required', true)->pluck('id')->all();
         $variants = $product->variants
-            ->map(fn (ProductVariant $variant): ?array => $this->serializeVariant($product, $variant, $requiredOptionIds))
+            ->map(fn (ProductVariant $variant): ?array => $this->serializeVariant($product, $variant))
             ->filter()
             ->values()
             ->all();
 
         if ($variants === []) {
-            throw new NotFoundHttpException();
+            throw new NotFoundHttpException;
         }
 
         return [
@@ -84,10 +89,10 @@ class ProductDetail extends StorefrontCatalog
     }
 
     /** @return array<string, mixed>|null */
-    private function serializeVariant(Product $product, ProductVariant $variant, array $requiredOptionIds): ?array
+    private function serializeVariant(Product $product, ProductVariant $variant): ?array
     {
         $skus = $variant->skus
-            ->map(fn (Sku $sku): ?array => $this->serializeSku($product, $sku, $requiredOptionIds))
+            ->map(fn (Sku $sku): ?array => $this->serializeSku($sku))
             ->filter()
             ->values()
             ->all();
@@ -121,20 +126,15 @@ class ProductDetail extends StorefrontCatalog
     }
 
     /** @return array<string, mixed>|null */
-    private function serializeSku(Product $product, Sku $sku, array $requiredOptionIds): ?array
+    private function serializeSku(Sku $sku): ?array
     {
-        $values = $sku->optionValues;
-        if (! $this->validOptionCombination($product, $values, $requiredOptionIds)) {
+        $state = $this->commerceState->forSku($sku);
+        if (! $state['option_combination_valid']) {
             return null;
         }
 
-        $price = $this->unambiguousCurrentPrice($sku);
-        $compareAt = $price?->compare_at_minor;
-        $sale = $price !== null && $compareAt !== null && $compareAt > $price->amount_minor
-            ? ['compare_at_minor' => $compareAt, 'discount_percentage' => (int) round((($compareAt - $price->amount_minor) / $compareAt) * 100)]
-            : null;
-        $available = $sku->inventoryLevels->sum(fn ($level): int => $level->on_hand - $level->reserved);
-        $availability = $available > 0 ? 'in_stock' : ($sku->is_backorderable ? 'backorder' : 'out_of_stock');
+        $values = $sku->optionValues;
+        $price = $state['price'];
 
         return [
             'id' => $sku->id,
@@ -144,20 +144,10 @@ class ProductDetail extends StorefrontCatalog
                 'code' => $value->code,
             ])->sortBy('option_id')->values()->all(),
             'price' => $price === null ? null : ['amount_minor' => $price->amount_minor, 'currency' => $price->currency],
-            'sale' => $sale,
-            'availability' => $availability,
-            'can_purchase' => $availability !== 'out_of_stock',
+            'sale' => $state['sale'],
+            'availability' => $state['availability'],
+            'can_purchase' => $state['can_purchase'],
         ];
-    }
-
-    private function validOptionCombination(Product $product, $values, array $requiredOptionIds): bool
-    {
-        return $values->every(fn (ProductOptionValue $value): bool => $value->option !== null
-            && $value->option->product_id === $product->id
-            && $value->option->is_active
-            && $value->is_active)
-            && $values->pluck('product_option_id')->unique()->count() === $values->count()
-            && collect($requiredOptionIds)->diff($values->pluck('product_option_id'))->isEmpty();
     }
 
     /** @param list<array<string, mixed>> $options @param list<array<string, mixed>> $variants */
@@ -189,10 +179,12 @@ class ProductDetail extends StorefrontCatalog
 
         $defaultByOption = collect($options)->mapWithKeys(function (array $option) use ($defaults): array {
             $value = collect($option['values'])->first(fn (array $value): bool => in_array($value['id'], $defaults, true));
+
             return $value === null ? [] : [$option['id'] => $value['id']];
         });
         $matches = $skus->filter(function (array $sku) use ($defaultByOption): bool {
             $selected = collect($sku['option_values'])->mapWithKeys(fn (array $value): array => [$value['option_id'] => $value['id']]);
+
             return $defaultByOption->every(fn (int $valueId, int $optionId): bool => $selected->get($optionId) === $valueId);
         })->values();
 
