@@ -170,19 +170,22 @@ class CartService
             $line = $this->pricingForItem($item);
             $lines[$item->id] = $line;
             $lineTotal = $line['line_total'];
-            if ($lineTotal === null || ! is_int($lineTotal['amount_minor'])) {
+            if (! $line['can_purchase'] || $lineTotal === null || ! is_int($lineTotal['amount_minor'])) {
                 $subtotalSafe = false;
-                break;
+
+                continue;
             }
             if ($subtotalCurrency === null) {
                 $subtotalCurrency = $lineTotal['currency'];
             } elseif ($subtotalCurrency !== $lineTotal['currency']) {
                 $subtotalSafe = false;
-                break;
+
+                continue;
             }
             if ($lineTotal['amount_minor'] > PHP_INT_MAX - $subtotalAmount) {
                 $subtotalSafe = false;
-                break;
+
+                continue;
             }
             $subtotalAmount += $lineTotal['amount_minor'];
         }
@@ -244,7 +247,6 @@ class CartService
         }
     }
 
-    /** @return array<string, mixed> */
     /** @return array<string, mixed> */
     private function pricingForItem(CartItem $item): array
     {

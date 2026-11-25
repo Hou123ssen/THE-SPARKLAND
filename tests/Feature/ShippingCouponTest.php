@@ -51,11 +51,17 @@ class ShippingCouponTest extends TestCase
         $service->quote('MA', 'MAD');
     }
 
-    public function test_unknown_and_wrong_currency_shipping_are_rejected(): void
+    public function test_unknown_country_shipping_is_rejected(): void
     {
         $service = app(ShippingQuoteService::class);
         $this->expectException(ValidationException::class);
-        $service->quote('FR', 'MAD');
+        $service->quote('ZZ', 'MAD');
+    }
+
+    public function test_wrong_currency_shipping_is_rejected(): void
+    {
+        $this->expectException(ValidationException::class);
+        app(ShippingQuoteService::class)->quote('MA', 'EUR');
     }
 
     public function test_duplicate_shipping_zone_and_rate_keys_are_rejected(): void
@@ -88,19 +94,49 @@ class ShippingCouponTest extends TestCase
         $this->assertSame(150, app(CouponService::class)->discount('FIFTEEN', 1001, 'MAD')['amount_minor']);
     }
 
-    public function test_coupon_validity_and_minimum_subtotal_are_enforced(): void
+    public function test_future_coupon_is_rejected(): void
     {
-        Coupon::create(['code' => 'LIMITED', 'type' => Coupon::TYPE_FIXED, 'currency' => 'MAD', 'fixed_amount_minor' => 100, 'minimum_subtotal_minor' => 1000, 'starts_at' => now()->addMinute()]);
+        Coupon::create(['code' => 'FUTURE', 'type' => Coupon::TYPE_FIXED, 'currency' => 'MAD', 'fixed_amount_minor' => 100, 'starts_at' => now()->addMinute()]);
 
         $this->expectException(ValidationException::class);
-        app(CouponService::class)->discount('LIMITED', 2000, 'MAD');
+        app(CouponService::class)->discount('FUTURE', 2000, 'MAD');
     }
 
-    public function test_disabled_expired_unknown_and_currency_mismatched_coupons_are_rejected(): void
+    public function test_expired_coupon_is_rejected(): void
+    {
+        Coupon::create(['code' => 'EXPIRED', 'type' => Coupon::TYPE_FIXED, 'currency' => 'MAD', 'fixed_amount_minor' => 100, 'ends_at' => now()->subMinute()]);
+
+        $this->expectException(ValidationException::class);
+        app(CouponService::class)->discount('EXPIRED', 2000, 'MAD');
+    }
+
+    public function test_disabled_coupon_is_rejected(): void
     {
         Coupon::create(['code' => 'OFF', 'type' => Coupon::TYPE_FIXED, 'currency' => 'MAD', 'fixed_amount_minor' => 100, 'is_active' => false]);
         $this->expectException(ValidationException::class);
         app(CouponService::class)->discount('OFF', 2000, 'MAD');
+    }
+
+    public function test_unknown_coupon_is_rejected(): void
+    {
+        $this->expectException(ValidationException::class);
+        app(CouponService::class)->discount('UNKNOWN', 2000, 'MAD');
+    }
+
+    public function test_currency_mismatched_coupon_is_rejected(): void
+    {
+        Coupon::create(['code' => 'EURO', 'type' => Coupon::TYPE_FIXED, 'currency' => 'EUR', 'fixed_amount_minor' => 100]);
+
+        $this->expectException(ValidationException::class);
+        app(CouponService::class)->discount('EURO', 2000, 'MAD');
+    }
+
+    public function test_coupon_minimum_subtotal_is_enforced(): void
+    {
+        Coupon::create(['code' => 'LIMITED', 'type' => Coupon::TYPE_FIXED, 'currency' => 'MAD', 'fixed_amount_minor' => 100, 'minimum_subtotal_minor' => 1000]);
+
+        $this->expectException(ValidationException::class);
+        app(CouponService::class)->discount('LIMITED', 999, 'MAD');
     }
 
     public function test_invalid_percentage_configuration_is_rejected(): void
@@ -193,6 +229,27 @@ class ShippingCouponTest extends TestCase
             ->assertJsonPath('quote.merchandise_subtotal.amount_minor', 12000)
             ->assertJsonPath('quote.shipping.amount_minor', 4500)
             ->assertJsonPath('quote.total.amount_minor', 16500);
+    }
+
+    public function test_stale_earlier_line_does_not_hide_later_valid_line_or_crash_cart_serialization(): void
+    {
+        [$staleProduct, $staleSku] = $this->sellableSku();
+        [, $validSku] = $this->sellableSku();
+
+        $this->postJson('/cart/items', ['sku_id' => $staleSku->id])->assertOk();
+        $this->postJson('/cart/items', ['sku_id' => $validSku->id])->assertOk();
+        $staleProduct->update(['is_active' => false]);
+
+        $response = $this->getJson('/cart')->assertOk();
+        $items = $response->json('cart.items');
+        $this->assertCount(2, $items);
+        $stale = collect($items)->firstWhere('sku_id', $staleSku->id);
+        $valid = collect($items)->firstWhere('sku_id', $validSku->id);
+        $this->assertFalse($stale['can_purchase']);
+        $this->assertTrue($valid['can_purchase']);
+        $this->assertNull($response->json('cart.merchandise_subtotal'));
+
+        $this->postJson('/cart/quote')->assertUnprocessable()->assertJsonValidationErrors('cart');
     }
 
     public function test_omitted_coupon_and_shipping_produce_merchandise_only_integer_totals(): void
