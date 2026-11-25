@@ -64,6 +64,19 @@ class ShippingCouponTest extends TestCase
         app(ShippingQuoteService::class)->quote('MA', 'EUR');
     }
 
+    public function test_multiple_active_zones_for_country_are_rejected(): void
+    {
+        ShippingZone::create([
+            'code' => 'MAROC-ALT',
+            'name' => 'Morocco Alternate',
+            'country_code' => 'MA',
+            'is_active' => true,
+        ]);
+
+        $this->expectException(ValidationException::class);
+        app(ShippingQuoteService::class)->quote('MA', 'MAD');
+    }
+
     public function test_duplicate_shipping_zone_and_rate_keys_are_rejected(): void
     {
         $zone = ShippingZone::query()->where('code', 'MAROC')->firstOrFail();
@@ -214,6 +227,14 @@ class ShippingCouponTest extends TestCase
 
         $this->expectException(ValidationException::class);
         app(CouponService::class)->discount('EMPTY', 1000, 'MAD');
+    }
+
+    public function test_zero_value_fixed_coupon_is_rejected(): void
+    {
+        Coupon::create(['code' => 'ZERO', 'type' => Coupon::TYPE_FIXED, 'currency' => 'MAD', 'fixed_amount_minor' => 0]);
+
+        $this->expectException(ValidationException::class);
+        app(CouponService::class)->discount('ZERO', 1000, 'MAD');
     }
 
     public function test_quote_recomputes_after_price_and_shipping_rate_changes(): void
