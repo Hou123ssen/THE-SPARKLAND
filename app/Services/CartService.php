@@ -15,6 +15,7 @@ use Illuminate\Validation\ValidationException;
 class CartService
 {
     public const SESSION_KEY = 'cart.active_id';
+
     public const MAX_QUANTITY = 4_294_967_295;
 
     public function __construct(
@@ -140,19 +141,35 @@ class CartService
     /** @return array<string, mixed> */
     public function serialize(Cart $cart): array
     {
+        $pricing = $this->authoritativePricing($cart);
+        $items = $cart->items;
+        $serializedItems = $items->map(fn (CartItem $item): array => $this->serializeItem($item, $pricing['lines'][$item->id]))->all();
+
+        return [
+            'item_count' => $items->sum('quantity'),
+            'merchandise_subtotal' => $pricing['merchandise_subtotal'],
+            'items' => $serializedItems,
+        ];
+    }
+
+    /** @return array{merchandise_subtotal: array{amount_minor: int, currency: string}|null, lines: array<int, array<string, mixed>>, can_quote: bool} */
+    public function authoritativePricing(Cart $cart): array
+    {
         $cart->load([
             'items' => fn ($items) => $items->orderBy('id')->with([
                 'sku' => fn ($skus) => $skus->with($this->skuRelations()),
             ]),
         ]);
 
-        $items = $cart->items->map(fn (CartItem $item): array => $this->serializeItem($item))->all();
+        $lines = [];
         $subtotal = null;
         $subtotalAmount = 0;
         $subtotalCurrency = null;
         $subtotalSafe = true;
-        foreach ($items as $item) {
-            $lineTotal = $item['line_total'];
+        foreach ($cart->items as $item) {
+            $line = $this->pricingForItem($item);
+            $lines[$item->id] = $line;
+            $lineTotal = $line['line_total'];
             if ($lineTotal === null || ! is_int($lineTotal['amount_minor'])) {
                 $subtotalSafe = false;
                 break;
@@ -176,10 +193,12 @@ class CartService
             ];
         }
 
+        $canQuote = $subtotalSafe && $subtotal !== null && collect($lines)->every(fn (array $line): bool => $line['can_purchase']);
+
         return [
-            'item_count' => $cart->items->sum('quantity'),
             'merchandise_subtotal' => $subtotal,
-            'items' => $items,
+            'lines' => $lines,
+            'can_quote' => $canQuote,
         ];
     }
 
@@ -226,11 +245,10 @@ class CartService
     }
 
     /** @return array<string, mixed> */
-    private function serializeItem(CartItem $item): array
+    /** @return array<string, mixed> */
+    private function pricingForItem(CartItem $item): array
     {
         $sku = $item->sku;
-        $variant = $sku->variant;
-        $product = $variant?->product;
         $state = $this->commerceState->forSku($sku);
         /** @var Price|null $price */
         $price = $state['price'];
@@ -245,6 +263,22 @@ class CartService
                 'currency' => $price->currency,
             ];
         }
+
+        return [
+            'unit_price' => $unitPrice,
+            'sale' => $state['sale'],
+            'line_total' => $lineTotal,
+            'availability' => $state['availability'],
+            'can_purchase' => $state['can_purchase'] && $price !== null && $lineTotal !== null,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function serializeItem(CartItem $item, array $pricing): array
+    {
+        $sku = $item->sku;
+        $variant = $sku->variant;
+        $product = $variant?->product;
         $media = $product === null ? collect() : collect($this->mediaManifest->forProduct($product, $variant));
         $primaryMedia = $media->firstWhere('role', 'front') ?? $media->first();
 
@@ -275,11 +309,7 @@ class CartService
                 'alt' => $primaryMedia['alt'] ?: $product?->name,
                 'responsive' => $primaryMedia['responsive'],
             ],
-            'unit_price' => $unitPrice,
-            'sale' => $state['sale'],
-            'line_total' => $lineTotal,
-            'availability' => $state['availability'],
-            'can_purchase' => $state['can_purchase'] && $price !== null && $lineTotal !== null,
+            ...$pricing,
         ];
     }
 
