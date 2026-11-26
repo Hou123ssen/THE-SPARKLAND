@@ -16,7 +16,9 @@ use App\Models\ProductVariant;
 use App\Models\ShippingRate;
 use App\Models\Sku;
 use App\Services\CartService;
+use App\Services\InventoryReservationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class CheckoutOrderTest extends TestCase
@@ -77,6 +79,19 @@ class CheckoutOrderTest extends TestCase
             ->assertJsonPath('order.merchandise_subtotal.amount_minor', 12000)
             ->assertJsonPath('order.shipping.amount_minor', 4500)
             ->assertJsonPath('order.total.amount_minor', 16500);
+    }
+
+    public function test_order_item_line_totals_sum_to_authoritative_merchandise_subtotal(): void
+    {
+        [, , $firstSku] = $this->sellableSku(price: 10000);
+        [, , $secondSku] = $this->sellableSku(price: 7000);
+        $this->addToCart($firstSku);
+        $this->addToCart($secondSku, 2);
+
+        $this->postJson('/checkout/orders', $this->checkoutInput())->assertCreated();
+
+        $order = Order::query()->with('items')->firstOrFail();
+        $this->assertSame($order->merchandise_subtotal_minor, $order->items->sum('line_total_minor'));
     }
 
     public function test_coupon_expiry_before_order_is_rejected_without_mutation(): void
@@ -183,6 +198,41 @@ class CheckoutOrderTest extends TestCase
         $this->assertDatabaseHas('inventory_levels', ['sku_id' => $firstSku->id, 'reserved' => 0]);
         $this->assertDatabaseHas('inventory_levels', ['sku_id' => $secondSku->id, 'reserved' => 0]);
         $this->assertDatabaseHas('carts', ['status' => Cart::STATUS_ACTIVE]);
+    }
+
+    public function test_reservation_failure_after_first_write_rolls_back_everything(): void
+    {
+        [, , $firstSku] = $this->sellableSku(stock: 2);
+        [, , $secondSku] = $this->sellableSku(stock: 2);
+        $this->addToCart($secondSku);
+        $this->addToCart($firstSku);
+
+        $delegate = app(InventoryReservationService::class);
+        $spy = new class($delegate) extends InventoryReservationService
+        {
+            public array $skuIds = [];
+
+            public function __construct(private readonly InventoryReservationService $delegate) {}
+
+            public function reserve(Sku $sku, int $quantity): void
+            {
+                $this->skuIds[] = $sku->id;
+                if (count($this->skuIds) === 2) {
+                    throw ValidationException::withMessages(['cart' => 'Simulated reservation failure.']);
+                }
+                $this->delegate->reserve($sku, $quantity);
+            }
+        };
+        $this->app->instance(InventoryReservationService::class, $spy);
+
+        $this->postJson('/checkout/orders', $this->checkoutInput())->assertUnprocessable();
+        $this->assertSame([$firstSku->id, $secondSku->id], $spy->skuIds);
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('order_items', 0);
+        $this->assertDatabaseHas('inventory_levels', ['sku_id' => $firstSku->id, 'reserved' => 0]);
+        $this->assertDatabaseHas('inventory_levels', ['sku_id' => $secondSku->id, 'reserved' => 0]);
+        $this->assertDatabaseHas('carts', ['status' => Cart::STATUS_ACTIVE]);
+        $this->assertTrue($this->app['session']->has(CartService::SESSION_KEY));
     }
 
     public function test_backorder_reserves_only_physical_stock(): void

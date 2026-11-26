@@ -41,18 +41,18 @@ class OrderService
                 throw ValidationException::withMessages(['cart' => 'Your cart is empty.']);
             }
 
-            $quote = $this->totals->quote(
-                $lockedCart,
+            $pricing = $this->carts->authoritativePricing($lockedCart);
+            $quote = $this->totals->quoteFromPricing(
+                $pricing,
                 $input['coupon_code'] ?? null,
                 $input['country_code'],
             );
 
-            $pricing = $this->carts->authoritativePricing($lockedCart);
             if (! $pricing['can_quote']) {
                 throw ValidationException::withMessages(['cart' => 'This cart cannot currently be ordered.']);
             }
 
-            foreach ($lockedCart->items as $item) {
+            foreach ($lockedCart->items->sortBy('sku_id') as $item) {
                 $this->inventory->reserve($item->sku, $item->quantity);
             }
 
