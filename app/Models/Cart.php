@@ -12,6 +12,8 @@ class Cart extends Model
 {
     public const STATUS_ACTIVE = 'active';
 
+    public const STATUS_CONVERTED = 'converted';
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

@@ -266,12 +266,17 @@ class CartService
             ];
         }
 
+        $canPurchase = $state['can_purchase'] && $price !== null && $lineTotal !== null;
+        if ($state['maximum_quantity'] !== null && $item->quantity > $state['maximum_quantity']) {
+            $canPurchase = false;
+        }
+
         return [
             'unit_price' => $unitPrice,
             'sale' => $state['sale'],
             'line_total' => $lineTotal,
             'availability' => $state['availability'],
-            'can_purchase' => $state['can_purchase'] && $price !== null && $lineTotal !== null,
+            'can_purchase' => $canPurchase,
         ];
     }
 
