@@ -9,8 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Navbar from "../Components/Navbar.jsx";
-import BagDrawer from "../Components/Commerce/BagDrawer.jsx";
-import { addCartItem, quoteCart, updateCartItem, removeCartItem } from "../lib/commerceApi.js";
+import { useCommerce } from "../Components/Commerce/CommerceProvider.jsx";
 import { consumeProductTransition, motionIsReduced, productTransitionName } from "../Components/ProductMotion.js";
 import { MOTION, addScrollTrack, scrollScene, useScrubScenes } from "../Components/StorefrontMotion.js";
 
@@ -236,11 +235,7 @@ export default function ProductShow({
     ),
   );
   const [quantity, setQuantity] = useState(1);
-  const [bag, setBag] = useState(null);
-  const [bagQuote, setBagQuote] = useState(null);
-  const [bagOpen, setBagOpen] = useState(false);
-  const [bagLoading, setBagLoading] = useState(false);
-  const [bagError, setBagError] = useState("");
+  const { addItem, loading: bagLoading, setBagOpen } = useCommerce();
   const quantityRef = useRef(null);
   const previousQuantityRef = useRef(1);
   const variant = variants.find((item) => item.id === variantId) ?? null;
@@ -293,12 +288,8 @@ export default function ProductShow({
   const commerceKey = `${selectedSku?.id ?? "none"}:${selectedSku?.price?.amount_minor ?? "unknown"}:${selectedSku?.availability ?? "unknown"}`;
   const addToBag = async () => {
     if (!selectedSku?.id) return;
-    setBagLoading(true); setBagError("");
-    try { const result = await addCartItem(selectedSku.id, quantity); setBag(result.cart); const q = await quoteCart({ country_code: "MA" }); setBagQuote(q.quote); setBagOpen(true); }
-    catch (error) { setBagError(error.message); setBagOpen(true); }
-    finally { setBagLoading(false); }
+    try { await addItem(selectedSku.id, quantity); setBagOpen(true); } catch { setBagOpen(true); }
   };
-  const mutateBag = async (callback) => { setBagLoading(true); try { const result = await callback(); setBag(result.cart); if (result.cart.items.length && result.cart.items.every((item) => item.can_purchase)) setBagQuote((await quoteCart({ country_code: "MA" })).quote); else setBagQuote(null); } catch (error) { setBagError(error.message); } finally { setBagLoading(false); } };
 
   useLayoutEffect(() => {
     if (previousQuantityRef.current === quantity) return undefined;
@@ -534,7 +525,7 @@ export default function ProductShow({
               </div>
               <div data-motion-controls className="hidden lg:block">
                 <AddToCart
-                disabled={!selectedSku?.can_purchase}
+                disabled={!selectedSku?.can_purchase || bagLoading}
                 className="mt-4 w-full"
                 onClick={addToBag}
                 />
@@ -579,7 +570,6 @@ export default function ProductShow({
           <AddToCart disabled={!selectedSku?.can_purchase || bagLoading} className="w-full" onClick={addToBag} />
         </div>
       </main>
-      <BagDrawer open={bagOpen} onClose={() => setBagOpen(false)} cart={bag} quote={bagQuote} loading={bagLoading} error={bagError} onIncrement={(item) => mutateBag(() => updateCartItem(item.id, item.quantity + 1))} onDecrement={(item) => mutateBag(() => updateCartItem(item.id, item.quantity - 1))} onRemove={(item) => mutateBag(() => removeCartItem(item.id))} onViewCart={() => { window.location.href = "/bag"; }} />
     </>
   );
 }
