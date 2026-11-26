@@ -1,0 +1,13 @@
+import { X } from "lucide-react";
+import { useEffect, useRef } from "react";
+import MotionLink from "../MotionLink.jsx";
+import CartLineItem from "./CartLineItem.jsx";
+import OrderSummary from "./OrderSummary.jsx";
+
+export default function BagDrawer({ open, onClose, cart, quote, loading, error, onIncrement, onDecrement, onRemove, onViewCart }) {
+  const closeRef = useRef(null);
+  const previousFocus = useRef(null);
+  useEffect(() => { if (!open) return; previousFocus.current = document.activeElement; closeRef.current?.focus(); const old = document.body.style.overflow; document.body.style.overflow = "hidden"; const key = (e) => { if (e.key === "Escape") onClose(); }; document.addEventListener("keydown", key); return () => { document.body.style.overflow = old; previousFocus.current?.focus?.(); document.removeEventListener("keydown", key); }; }, [open, onClose]);
+  if (!open) return null;
+  return <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label="Shopping bag"><button type="button" onClick={onClose} aria-label="Close shopping bag" className="absolute inset-0 bg-[#111111]/35" /><aside className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl"><header className="flex items-center justify-between border-b border-[#111111]/12 px-5 py-5"><h2 className="font-headline text-3xl uppercase leading-none">Your bag</h2><button ref={closeRef} type="button" onClick={onClose} aria-label="Close shopping bag" className="inline-flex h-11 w-11 items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0057c8]"><X /></button></header><div className="flex-1 overflow-y-auto px-5">{error ? <p role="alert" className="mt-4 text-sm text-[#9e3030]">{error}</p> : null}{cart?.items?.length ? cart.items.map((item) => <CartLineItem key={item.id} item={item} loading={loading} onIncrement={onIncrement} onDecrement={onDecrement} onRemove={onRemove} />) : <p className="py-10 text-sm text-[#111111]/60">Your bag is empty.</p>}</div>{cart?.items?.length ? <footer className="border-t border-[#111111]/12 px-5 py-5"><OrderSummary quote={quote} itemCount={cart.item_count} disabled={!quote || cart.items.some((item) => !item.can_purchase)} onCheckout={onViewCart} /></footer> : null}</aside></div>;
+}

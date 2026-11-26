@@ -3,6 +3,7 @@
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\CollectionController;
+use App\Http\Controllers\CommercePageController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ShopController;
@@ -14,6 +15,8 @@ Route::get('/products/{slug}', [ProductController::class, 'show'])->name('produc
 Route::get('/collections', [CollectionController::class, 'index'])->name('collections.index');
 Route::get('/collections/{slug}', [CollectionController::class, 'show'])->name('collections.show');
 Route::get('/cart', [CartController::class, 'show'])->name('cart.show');
+Route::get('/bag', [CommercePageController::class, 'bag'])->name('bag');
+Route::get('/checkout', [CommercePageController::class, 'checkout'])->name('checkout');
 Route::post('/cart/quote', [CartController::class, 'quote'])->block()->name('cart.quote');
 // Serialize same-session mutations so first-cart creation and established-cart row locks share one boundary.
 Route::post('/cart/items', [CartController::class, 'store'])->block()->name('cart.items.store');

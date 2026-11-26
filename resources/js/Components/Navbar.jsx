@@ -3,6 +3,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import MotionLink from "./MotionLink.jsx";
 import { MOTION, reducedMotion } from "./StorefrontMotion.js";
+import BagDrawer from "./Commerce/BagDrawer.jsx";
+import { fetchCart, quoteCart, updateCartItem, removeCartItem } from "../lib/commerceApi.js";
 
 const navItems = [
   { label: "Shop", href: "/shop" },
@@ -14,6 +16,11 @@ const navItems = [
 export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [bagOpen, setBagOpen] = useState(false);
+  const [cart, setCart] = useState(null);
+  const [quote, setQuote] = useState(null);
+  const [bagError, setBagError] = useState("");
+  const [bagLoading, setBagLoading] = useState(false);
   const buttonRef = useRef(null);
   const panelRef = useRef(null);
   const backdropRef = useRef(null);
@@ -54,6 +61,9 @@ export default function Navbar() {
   }, [open]);
 
   const close = () => { setOpen(false); buttonRef.current?.focus(); };
+  const loadBag = async () => { setBagError(""); try { const result = await fetchCart(); setCart(result.cart); if (result.cart.items.length && result.cart.items.every((item) => item.can_purchase)) setQuote((await quoteCart({ country_code: "MA" })).quote); else setQuote(null); } catch (error) { setBagError(error.message); } };
+  useEffect(() => { loadBag(); }, []);
+  const mutateBag = async (callback) => { setBagLoading(true); try { const result = await callback(); setCart(result.cart); if (result.cart.items.length && result.cart.items.every((item) => item.can_purchase)) setQuote((await quoteCart({ country_code: "MA" })).quote); else setQuote(null); } catch (error) { setBagError(error.message); } finally { setBagLoading(false); } };
 
   return <nav className="fixed inset-x-0 top-0 z-50 bg-white" aria-label="Primary navigation" style={{ viewTransitionName: "sparkland-navbar" }}>
     <div className="relative mx-auto flex h-[76px] max-w-[1440px] items-center justify-between border-b border-[#111111]/10 px-6 sm:px-8 lg:px-12 xl:px-14">
@@ -63,10 +73,12 @@ export default function Navbar() {
         : <span key={item.label} className="text-[0.65rem] font-medium uppercase tracking-[0.2em] text-[#111111]/45">{item.label}</span>)}</div>
       <div className="ml-auto hidden items-center gap-1 md:flex">
         <span className="inline-flex h-10 w-10 items-center justify-center text-[#111111]/45" aria-label="Search unavailable"><Search aria-hidden="true" size={19} strokeWidth={1.8} /></span>
-        <span className="inline-flex h-10 w-10 items-center justify-center text-[#111111]/45" aria-label="Shopping bag unavailable"><ShoppingBag aria-hidden="true" size={19} strokeWidth={1.8} /></span>
+        <button type="button" onClick={() => { setBagOpen(true); loadBag(); }} className="relative inline-flex h-10 w-10 items-center justify-center text-[#111111] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0057c8]" aria-label="Open shopping bag"><ShoppingBag aria-hidden="true" size={19} strokeWidth={1.8} />{cart?.item_count ? <span className="absolute right-0 top-0 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0057c8] px-1 text-[.5rem] font-bold text-white">{cart.item_count}</span> : null}</button>
       </div>
+      <button type="button" onClick={() => { setBagOpen(true); loadBag(); }} className="absolute right-16 inline-flex h-10 w-10 items-center justify-center text-[#111111] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0057c8] md:hidden" aria-label="Open shopping bag"><ShoppingBag aria-hidden="true" size={19} strokeWidth={1.8} />{cart?.item_count ? <span className="absolute right-0 top-0 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0057c8] px-1 text-[.5rem] font-bold text-white">{cart.item_count}</span> : null}</button>
       <button ref={buttonRef} type="button" onClick={() => { if (!mounted) setMounted(true); setOpen(!open); }} aria-expanded={open} aria-controls="sparkland-mobile-menu" aria-label={open ? "Close menu" : "Open menu"} className="motion-press inline-flex h-10 w-10 items-center justify-center text-[#111111] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-4 md:hidden">{open ? <X aria-hidden="true" size={24} strokeWidth={1.7} /> : <Menu aria-hidden="true" size={24} strokeWidth={1.7} />}</button>
     </div>
+    <BagDrawer open={bagOpen} onClose={() => setBagOpen(false)} cart={cart} quote={quote} loading={bagLoading} error={bagError} onIncrement={(item) => mutateBag(() => updateCartItem(item.id, item.quantity + 1))} onDecrement={(item) => mutateBag(() => updateCartItem(item.id, item.quantity - 1))} onRemove={(item) => mutateBag(() => removeCartItem(item.id))} onViewCart={() => { window.location.href = "/bag"; }} />
     {mounted && <div id="sparkland-mobile-menu" className="fixed inset-x-0 bottom-0 top-[76px] md:hidden" aria-hidden={!open} inert={!open ? "" : undefined}>
       <button ref={backdropRef} type="button" onClick={close} tabIndex={open ? 0 : -1} aria-label="Close menu" className="absolute inset-0 w-full bg-[#111111]/35" />
       <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Mobile navigation" className="relative bg-white px-6 pb-8 pt-5 shadow-lg">

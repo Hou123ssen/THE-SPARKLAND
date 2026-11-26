@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Navbar from "../Components/Navbar.jsx";
+import BagDrawer from "../Components/Commerce/BagDrawer.jsx";
+import { addCartItem, quoteCart, updateCartItem, removeCartItem } from "../lib/commerceApi.js";
 import { consumeProductTransition, motionIsReduced, productTransitionName } from "../Components/ProductMotion.js";
 import { MOTION, addScrollTrack, scrollScene, useScrubScenes } from "../Components/StorefrontMotion.js";
 
@@ -195,11 +197,12 @@ function Gallery({ media, name, product }) {
   );
 }
 
-function AddToCart({ disabled, className = "" }) {
+function AddToCart({ disabled, className = "", onClick }) {
   return (
     <button
       type="button"
       disabled={disabled}
+      onClick={onClick}
       className={`motion-press flex min-h-14 items-center justify-between bg-[#0057c8] px-5 text-[.65rem] font-bold uppercase tracking-[.16em] text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0057c8] focus-visible:ring-offset-4 enabled:hover:bg-[#111111] disabled:cursor-not-allowed disabled:bg-[#d6d6d3] disabled:text-[#111111]/55 ${className}`}
     >
       <span>Add to cart</span>
@@ -233,6 +236,11 @@ export default function ProductShow({
     ),
   );
   const [quantity, setQuantity] = useState(1);
+  const [bag, setBag] = useState(null);
+  const [bagQuote, setBagQuote] = useState(null);
+  const [bagOpen, setBagOpen] = useState(false);
+  const [bagLoading, setBagLoading] = useState(false);
+  const [bagError, setBagError] = useState("");
   const quantityRef = useRef(null);
   const previousQuantityRef = useRef(1);
   const variant = variants.find((item) => item.id === variantId) ?? null;
@@ -283,6 +291,14 @@ export default function ProductShow({
     .filter(Boolean)
     .join(" · ");
   const commerceKey = `${selectedSku?.id ?? "none"}:${selectedSku?.price?.amount_minor ?? "unknown"}:${selectedSku?.availability ?? "unknown"}`;
+  const addToBag = async () => {
+    if (!selectedSku?.id) return;
+    setBagLoading(true); setBagError("");
+    try { const result = await addCartItem(selectedSku.id, quantity); setBag(result.cart); const q = await quoteCart({ country_code: "MA" }); setBagQuote(q.quote); setBagOpen(true); }
+    catch (error) { setBagError(error.message); setBagOpen(true); }
+    finally { setBagLoading(false); }
+  };
+  const mutateBag = async (callback) => { setBagLoading(true); try { const result = await callback(); setBag(result.cart); if (result.cart.items.length && result.cart.items.every((item) => item.can_purchase)) setBagQuote((await quoteCart({ country_code: "MA" })).quote); else setBagQuote(null); } catch (error) { setBagError(error.message); } finally { setBagLoading(false); } };
 
   useLayoutEffect(() => {
     if (previousQuantityRef.current === quantity) return undefined;
@@ -520,6 +536,7 @@ export default function ProductShow({
                 <AddToCart
                 disabled={!selectedSku?.can_purchase}
                 className="mt-4 w-full"
+                onClick={addToBag}
                 />
               </div>
             </section>
@@ -559,9 +576,10 @@ export default function ProductShow({
           ) : null}
         </div>
         <div data-motion-sticky className="fixed inset-x-0 bottom-0 z-40 border-t border-[#111111]/15 bg-white px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 lg:hidden">
-          <AddToCart disabled={!selectedSku?.can_purchase} className="w-full" />
+          <AddToCart disabled={!selectedSku?.can_purchase || bagLoading} className="w-full" onClick={addToBag} />
         </div>
       </main>
+      <BagDrawer open={bagOpen} onClose={() => setBagOpen(false)} cart={bag} quote={bagQuote} loading={bagLoading} error={bagError} onIncrement={(item) => mutateBag(() => updateCartItem(item.id, item.quantity + 1))} onDecrement={(item) => mutateBag(() => updateCartItem(item.id, item.quantity - 1))} onRemove={(item) => mutateBag(() => removeCartItem(item.id))} onViewCart={() => { window.location.href = "/bag"; }} />
     </>
   );
 }
