@@ -16,7 +16,16 @@ class CartTotalsService
     /** @return array<string, mixed> */
     public function quote(Cart $cart, ?string $couponCode = null, ?string $countryCode = null): array
     {
-        $pricing = $this->cartService->authoritativePricing($cart);
+        return $this->quoteFromPricing(
+            $this->cartService->authoritativePricing($cart),
+            $couponCode,
+            $countryCode,
+        );
+    }
+
+    /** @param array<string, mixed> $pricing */
+    public function quoteFromPricing(array $pricing, ?string $couponCode = null, ?string $countryCode = null): array
+    {
         $subtotal = $pricing['merchandise_subtotal'];
         if (! $pricing['can_quote'] || $subtotal === null) {
             throw ValidationException::withMessages(['cart' => 'This cart cannot currently be quoted.']);

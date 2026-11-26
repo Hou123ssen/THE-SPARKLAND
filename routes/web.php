@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CartController;
+use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ProductController;
@@ -18,3 +19,4 @@ Route::post('/cart/quote', [CartController::class, 'quote'])->block()->name('car
 Route::post('/cart/items', [CartController::class, 'store'])->block()->name('cart.items.store');
 Route::patch('/cart/items/{item}', [CartController::class, 'update'])->whereNumber('item')->block()->name('cart.items.update');
 Route::delete('/cart/items/{item}', [CartController::class, 'destroy'])->whereNumber('item')->block()->name('cart.items.destroy');
+Route::post('/checkout/orders', [CheckoutController::class, 'store'])->block()->name('checkout.orders.store');
